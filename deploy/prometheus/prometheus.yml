@@ -1,0 +1,61 @@
+# AI4Edu Prometheus 配置
+# 采集间隔：15秒
+# 采集目标：backend(:8000), node_exporter, cadvisor
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+  external_labels:
+    cluster: ai4edu
+    environment: production
+
+# 告警规则文件
+rule_files:
+  - "alerts/*.yml"
+
+# 采集配置
+scrape_configs:
+  # ============ AI4Edu Backend ============
+  - job_name: "ai4edu-backend"
+    metrics_path: "/metrics"
+    scheme: http
+    static_configs:
+      - targets:
+          - "backend:8000"
+        labels:
+          service: "ai4edu-backend"
+          team: "backend"
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  # ============ Node Exporter (系统指标) ============
+  - job_name: "node-exporter"
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - "node-exporter:9100"
+        labels:
+          service: "node-exporter"
+          job: "node"
+
+  # ============ cAdvisor (容器指标) ============
+  - job_name: "cadvisor"
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - "cadvisor:8080"
+        labels:
+          service: "cadvisor"
+          job: "containers"
+
+  # ============ Prometheus 自身 ============
+  - job_name: "prometheus"
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - "localhost:9090"
+        labels:
+          service: "prometheus"

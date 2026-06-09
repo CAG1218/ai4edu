@@ -1,0 +1,30 @@
+/**
+ * 自习模式主题
+ * 舒适绿 #388E3C
+ */
+.scene-self_study {
+  --scene-primary-color: var(--scene-self-study-primary);
+  --scene-primary-light: #66BB6A;
+  --scene-primary-dark: #2E7D32;
+  --scene-primary-bg: #E8F5E9;
+  --scene-primary-bg-hover: #C8E6C9;
+
+  // 侧边栏
+  .sidebar {
+    background: linear-gradient(180deg, #2E7D32 0%, #388E3C 100%);
+  }
+
+  // 顶部栏
+  .header {
+    border-bottom-color: var(--scene-self-study-primary);
+  }
+
+  // 强调色
+  .accent-text {
+    color: var(--scene-self-study-primary);
+  }
+
+  .accent-bg {
+    background-color: var(--scene-self-study-primary);
+  }
+}

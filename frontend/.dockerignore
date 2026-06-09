@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.vite/
+*.log
+.env
+.env.local
+.env.production
+.git/
+.gitignore
+.idea/
+.vscode/
+*.md
+!README.md
+tests/
+coverage/

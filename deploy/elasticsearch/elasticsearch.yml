@@ -1,0 +1,56 @@
+# AI4Edu Elasticsearch 配置
+# 单节点模式，适用于生产环境小规模部署
+
+cluster.name: ai4edu-cluster
+node.name: ai4edu-es-node-1
+
+# 单节点发现模式
+discovery.type: single-node
+
+# 网络配置
+network.host: 0.0.0.0
+http.port: 9200
+transport.port: 9300
+
+# 内存限制
+indices.memory.index_buffer_size: 20%
+
+# 索引模板设置
+action.auto_create_index: "ai4edu-*,-.*"
+
+# 安全配置（生产环境应启用）
+xpack.security.enabled: false
+xpack.security.http.ssl.enabled: false
+xpack.security.transport.ssl.enabled: false
+
+# 索引生命周期管理
+xpack.ilm.enabled: true
+
+# 索引模板默认设置
+# 创建索引时自动应用
+index:
+  number_of_shards: 1
+  number_of_replicas: 0
+  refresh_interval: 5s
+
+# 线程池配置
+thread_pool:
+  search:
+    size: 5
+    queue_size: 100
+  write:
+    size: 3
+    queue_size: 200
+
+# 熔断器配置
+indices.breaker.total.limit: 70%
+indices.breaker.fielddata.limit: 40%
+indices.breaker.request.limit: 40%
+
+# 日志配置
+logger.level: INFO
+path.logs: /var/log/elasticsearch
+
+# 缓存配置
+indices.queries.cache.size: 10%
+indices.fielddata.cache.size: 40%

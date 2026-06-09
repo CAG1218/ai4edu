@@ -1,0 +1,30 @@
+/**
+ * 讨论模式主题
+ * 活力紫 #7B1FA2
+ */
+.scene-discussion {
+  --scene-primary-color: var(--scene-discussion-primary);
+  --scene-primary-light: #AB47BC;
+  --scene-primary-dark: #6A1B9A;
+  --scene-primary-bg: #F3E5F5;
+  --scene-primary-bg-hover: #E1BEE7;
+
+  // 侧边栏
+  .sidebar {
+    background: linear-gradient(180deg, #6A1B9A 0%, #7B1FA2 100%);
+  }
+
+  // 顶部栏
+  .header {
+    border-bottom-color: var(--scene-discussion-primary);
+  }
+
+  // 强调色
+  .accent-text {
+    color: var(--scene-discussion-primary);
+  }
+
+  .accent-bg {
+    background-color: var(--scene-discussion-primary);
+  }
+}

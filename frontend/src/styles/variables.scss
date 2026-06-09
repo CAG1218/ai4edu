@@ -1,0 +1,114 @@
+/**
+ * AI4Edu CSS 变量
+ * 场景主题色定义
+ */
+
+// 场景主题色
+$scene-classroom-primary: #1976D2;   // 专注蓝
+$scene-self-study-primary: #388E3C;  // 舒适绿
+$scene-exam-primary: #F57C00;       // 警示橙
+$scene-discussion-primary: #7B1FA2; // 活力紫
+
+// 场景主题色映射
+$scene-colors: (
+  'classroom': $scene-classroom-primary,
+  'self_study': $scene-self-study-primary,
+  'exam': $scene-exam-primary,
+  'discussion': $scene-discussion-primary,
+);
+
+// 功能色
+$color-success: #4CAF50;
+$color-warning: #FF9800;
+$color-danger: #F44336;
+$color-info: #2196F3;
+
+// 文字色
+$color-text-primary: #1A1A1A;
+$color-text-regular: #333333;
+$color-text-secondary: #666666;
+$color-text-placeholder: #999999;
+
+// 背景色
+$color-bg-primary: #FFFFFF;
+$color-bg-secondary: #F5F7FA;
+$color-bg-tertiary: #EBEEF5;
+
+// 边框色
+$color-border: #DCDFE6;
+$color-border-light: #E4E7ED;
+
+// 间距
+$spacing-xs: 4px;
+$spacing-sm: 8px;
+$spacing-md: 16px;
+$spacing-lg: 24px;
+$spacing-xl: 32px;
+
+// 圆角
+$border-radius-sm: 4px;
+$border-radius-md: 8px;
+$border-radius-lg: 12px;
+$border-radius-xl: 16px;
+
+// 阴影
+$shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+$shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+$shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+
+// 动画
+$transition-fast: 0.15s ease;
+$transition-normal: 0.3s ease;
+$transition-slow: 0.5s ease;
+
+:root {
+  // 场景主题色
+  --scene-classroom-primary: #{$scene-classroom-primary};
+  --scene-self-study-primary: #{$scene-self-study-primary};
+  --scene-exam-primary: #{$scene-exam-primary};
+  --scene-discussion-primary: #{$scene-discussion-primary};
+  --scene-primary-color: #{$scene-classroom-primary};
+
+  // 功能色
+  --color-success: #{$color-success};
+  --color-warning: #{$color-warning};
+  --color-danger: #{$color-danger};
+  --color-info: #{$color-info};
+
+  // 文字色
+  --color-text-primary: #{$color-text-primary};
+  --color-text-regular: #{$color-text-regular};
+  --color-text-secondary: #{$color-text-secondary};
+  --color-text-placeholder: #{$color-text-placeholder};
+
+  // 背景色
+  --color-bg-primary: #{$color-bg-primary};
+  --color-bg-secondary: #{$color-bg-secondary};
+  --color-bg-tertiary: #{$color-bg-tertiary};
+
+  // 边框
+  --color-border: #{$color-border};
+  --color-border-light: #{$color-border-light};
+
+  // 间距
+  --spacing-xs: #{$spacing-xs};
+  --spacing-sm: #{$spacing-sm};
+  --spacing-md: #{$spacing-md};
+  --spacing-lg: #{$spacing-lg};
+  --spacing-xl: #{$spacing-xl};
+
+  // 圆角
+  --border-radius-sm: #{$border-radius-sm};
+  --border-radius-md: #{$border-radius-md};
+  --border-radius-lg: #{$border-radius-lg};
+
+  // 阴影
+  --shadow-sm: #{$shadow-sm};
+  --shadow-md: #{$shadow-md};
+  --shadow-lg: #{$shadow-lg};
+
+  // 动画
+  --transition-fast: #{$transition-fast};
+  --transition-normal: #{$transition-normal};
+  --transition-slow: #{$transition-slow};
+}

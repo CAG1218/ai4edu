@@ -1,0 +1,30 @@
+/**
+ * 课堂模式主题
+ * 专注蓝 #1976D2
+ */
+.scene-classroom {
+  --scene-primary-color: var(--scene-classroom-primary);
+  --scene-primary-light: #42A5F5;
+  --scene-primary-dark: #1565C0;
+  --scene-primary-bg: #E3F2FD;
+  --scene-primary-bg-hover: #BBDEFB;
+
+  // 侧边栏
+  .sidebar {
+    background: linear-gradient(180deg, #1565C0 0%, #1976D2 100%);
+  }
+
+  // 顶部栏
+  .header {
+    border-bottom-color: var(--scene-classroom-primary);
+  }
+
+  // 强调色
+  .accent-text {
+    color: var(--scene-classroom-primary);
+  }
+
+  .accent-bg {
+    background-color: var(--scene-classroom-primary);
+  }
+}

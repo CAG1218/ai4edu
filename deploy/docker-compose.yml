@@ -1,0 +1,231 @@
+services:
+  # ============ 前端 ============
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: ../deploy/Dockerfile.frontend
+    container_name: ai4edu-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - ai4edu-network
+
+  # ============ 后端 ============
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: ai4edu-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../backend/.env
+    environment:
+      - POSTGRES_HOST=postgres
+      - NEO4J_URI=bolt://neo4j:7687
+      - CLICKHOUSE_HOST=clickhouse
+      - REDIS_HOST=redis
+      - MINIO_ENDPOINT=minio:9002
+      - ELASTICSEARCH_HOST=http://elasticsearch:9200
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - ai4edu-network
+
+  # ============ Celery Worker ============
+  celery-worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: ai4edu-celery-worker
+    command: celery -A app.celery worker --loglevel=info --concurrency=4
+    env_file:
+      - ../backend/.env
+    environment:
+      - POSTGRES_HOST=postgres
+      - REDIS_HOST=redis
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    depends_on:
+      - redis
+      - postgres
+    restart: unless-stopped
+    networks:
+      - ai4edu-network
+
+  # ============ Celery Beat ============
+  celery-beat:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: ai4edu-celery-beat
+    command: celery -A app.celery beat --loglevel=info
+    env_file:
+      - ../backend/.env
+    environment:
+      - POSTGRES_HOST=postgres
+      - REDIS_HOST=redis
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - ai4edu-network
+
+  # ============ PostgreSQL ============
+  postgres:
+    image: docker.1ms.run/library/postgres:16-alpine
+    container_name: ai4edu-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ai4edu
+      POSTGRES_USER: ai4edu
+      POSTGRES_PASSWORD: ai4edu_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai4edu"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - ai4edu-network
+
+  # ============ Neo4j ============
+  neo4j:
+    image: docker.1ms.run/library/neo4j:5.20
+    container_name: ai4edu-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/neo4j_password
+      NEO4J_PLUGINS: '["apoc"]'
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - ai4edu-network
+
+  # ============ ClickHouse ============
+  clickhouse:
+    image: docker.1ms.run/clickhouse/clickhouse-server:24.1
+    container_name: ai4edu-clickhouse
+    ports:
+      - "8123:8123"
+      - "9001:9000"
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: clickhouse_password
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --password clickhouse_password --query 'SELECT 1'"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - ai4edu-network
+
+  # ============ Redis ============
+  redis:
+    image: docker.1ms.run/library/redis:7-alpine
+    container_name: ai4edu-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - ai4edu-network
+
+  # ============ Elasticsearch ============
+  elasticsearch:
+    image: docker.1ms.run/library/elasticsearch:8.13.0
+    container_name: ai4edu-elasticsearch
+    ports:
+      - "9200:9200"
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - ai4edu-network
+
+  # ============ MinIO ============
+  minio:
+    image: docker.1ms.run/minio/minio:latest
+    container_name: ai4edu-minio
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - ai4edu-network
+
+# ============ 数据卷 ============
+volumes:
+  postgres_data:
+    driver: local
+  neo4j_data:
+    driver: local
+  neo4j_logs:
+    driver: local
+  clickhouse_data:
+    driver: local
+  redis_data:
+    driver: local
+  es_data:
+    driver: local
+  minio_data:
+    driver: local
+
+# ============ 网络 ============
+networks:
+  ai4edu-network:
+    driver: bridge

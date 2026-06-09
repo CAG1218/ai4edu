@@ -1,0 +1,30 @@
+/**
+ * 考前模式主题
+ * 警示橙 #F57C00
+ */
+.scene-exam {
+  --scene-primary-color: var(--scene-exam-primary);
+  --scene-primary-light: #FFB74D;
+  --scene-primary-dark: #E65100;
+  --scene-primary-bg: #FFF3E0;
+  --scene-primary-bg-hover: #FFE0B2;
+
+  // 侧边栏
+  .sidebar {
+    background: linear-gradient(180deg, #E65100 0%, #F57C00 100%);
+  }
+
+  // 顶部栏
+  .header {
+    border-bottom-color: var(--scene-exam-primary);
+  }
+
+  // 强调色
+  .accent-text {
+    color: var(--scene-exam-primary);
+  }
+
+  .accent-bg {
+    background-color: var(--scene-exam-primary);
+  }
+}

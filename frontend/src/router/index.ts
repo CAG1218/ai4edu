@@ -1,0 +1,104 @@
+/**
+ * AI4Edu 路由配置
+ * 场景化嵌套路由结构
+ */
+import { createRouter, createWebHistory } from 'vue-router'
+import type { RouteRecordRaw } from 'vue-router'
+import { setupGuards } from './guards'
+import { sceneRoutes } from './routes/scene-routes'
+import { teacherRoutes } from './routes/teacher-routes'
+import { adminRoutes } from './routes/admin-routes'
+
+// 静态路由（无需认证）
+const constantRoutes: RouteRecordRaw[] = [
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/auth/LoginView.vue'),
+    meta: {
+      title: '登录',
+      requiresAuth: false,
+    },
+  },
+  {
+    path: '/register',
+    name: 'Register',
+    component: () => import('@/views/auth/RegisterView.vue'),
+    meta: {
+      title: '注册',
+      requiresAuth: false,
+    },
+  },
+  {
+    path: '/onboarding',
+    component: () => import('@/views/onboarding/OnboardingLayout.vue'),
+    meta: {
+      title: '引导',
+      requiresAuth: true,
+    },
+    children: [
+      {
+        path: 'role',
+        name: 'onboarding-role',
+        component: () => import('@/views/onboarding/StepRoleView.vue'),
+        meta: {
+          title: '选择角色',
+          requiresAuth: true,
+        },
+      },
+      {
+        path: 'interests',
+        name: 'onboarding-interests',
+        component: () => import('@/views/onboarding/StepInterestsView.vue'),
+        meta: {
+          title: '兴趣学科',
+          requiresAuth: true,
+        },
+      },
+      {
+        path: 'goal',
+        name: 'onboarding-goal',
+        component: () => import('@/views/onboarding/StepGoalView.vue'),
+        meta: {
+          title: '学习目标',
+          requiresAuth: true,
+        },
+      },
+    ],
+  },
+]
+
+// 动态路由（需认证）
+const asyncRoutes: RouteRecordRaw[] = [
+  {
+    path: '/',
+    redirect: '/scene/classroom/dashboard',
+  },
+  ...sceneRoutes,
+  ...teacherRoutes,
+  ...adminRoutes,
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('@/views/scene/DashboardView.vue'),
+    meta: {
+      title: '页面不存在',
+    },
+  },
+]
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes: [...constantRoutes, ...asyncRoutes],
+  scrollBehavior(_to, _from, savedPosition) {
+    if (savedPosition) {
+      return savedPosition
+    }
+    return { top: 0 }
+  },
+})
+
+// 设置路由守卫
+setupGuards(router)
+
+export default router
