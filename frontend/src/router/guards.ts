@@ -4,6 +4,7 @@
  */
 import type { Router } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { useUserStore } from '@/stores/user'
 
 // Onboarding 相关路由名称
 const ONBOARDING_ROUTES = new Set(['onboarding-role', 'onboarding-interests', 'onboarding-goal'])
@@ -36,18 +37,24 @@ export function setupGuards(router: Router): void {
 
     // 需要认证但未登录
     if (!authStore.isAuthenticated) {
-      // 尝试刷新Token
+      // 尝试刷新Token（只尝试一次，失败立即清除并跳转登录，避免死循环）
       if (authStore.refreshToken) {
         try {
           await authStore.refreshAccessToken()
           // 刷新成功后获取用户信息
           await authStore.fetchCurrentUser()
         } catch {
-          // Token刷新失败，跳转登录
+          // Token刷新失败，清除所有认证信息，直接跳转登录
+          authStore.clearAuth()
+          next({
+            name: 'Login',
+            query: { redirect: to.fullPath },
+          })
+          return
         }
       }
 
-      // 再次检查认证状态
+      // 再次检查认证状态（无 refreshToken 或刷新后仍未认证）
       if (!authStore.isAuthenticated) {
         next({
           name: 'Login',
@@ -70,14 +77,17 @@ export function setupGuards(router: Router): void {
 
     // 检查 Onboarding 引导状态
     const isOnboardingRoute = to.name ? ONBOARDING_ROUTES.has(to.name as string) : false
+    const userStore = useUserStore()
+    // 综合判断 onboarding 状态：优先使用 authStore.user，fallback 到 userStore
+    const onboardingCompleted = authStore.user?.onboarding_completed ?? userStore.onboardingCompleted
 
-    if (authStore.user && !authStore.user.onboarding_completed && !isOnboardingRoute) {
+    if (authStore.user && !onboardingCompleted && !isOnboardingRoute) {
       // 未完成引导，跳转到引导页
       next({ name: 'onboarding-role' })
       return
     }
 
-    if (authStore.user?.onboarding_completed && isOnboardingRoute) {
+    if (onboardingCompleted && isOnboardingRoute) {
       // 已完成引导，不再允许访问引导页
       next({ path: '/' })
       return

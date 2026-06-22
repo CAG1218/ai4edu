@@ -61,6 +61,12 @@ async function handleSkip(): Promise<void> {
       await authStore.fetchCurrentUser()
     }
     userStore.completeOnboarding()
+
+    // 确保 authStore 中的 onboarding 状态同步更新
+    if (authStore.user) {
+      authStore.user.onboarding_completed = true
+    }
+
     // 跳转到默认首页
     const redirect = (route.query.redirect as string) || '/'
     await router.push(redirect)

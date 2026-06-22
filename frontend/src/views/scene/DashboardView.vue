@@ -260,9 +260,10 @@ onMounted(async () => {
   await sceneStore.getRecommendation()
   // 获取仪表盘统计
   try {
-    const res = await api.get('/api/v1/dashboard/stats')
-    if (res.data?.data) {
-      dashboardStats.value = res.data.data
+    // api 响应拦截器已解包 axios，res = {code, data: stats, message}
+    const res = await api.get('/api/v1/dashboard/stats') as any
+    if (res.data) {
+      dashboardStats.value = res.data
     }
   } catch (e) {
     console.warn('获取仪表盘统计失败', e)

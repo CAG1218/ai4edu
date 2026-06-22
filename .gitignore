@@ -37,6 +37,9 @@ desktop.ini
 .cache/
 .temp/
 tmp/
-midterm/03_Demo演示视频.mp4
-midterm/03_Demo演示视频.mp4
-midterm/03_Demo演示视频.mp4
+
+# Large files (videos, zips, binaries)
+midterm/*.mp4
+midterm/*.zip
+*.mp4
+*.zip

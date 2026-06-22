@@ -44,8 +44,8 @@ api.interceptors.request.use(
       config.headers['X-Tenant-ID'] = String(authStore.user.tenant_id)
     }
 
-    // 注入请求ID
-    config.headers['X-Request-ID'] = crypto.randomUUID()
+    // 注入请求ID（兼容 HTTP 环境）
+    config.headers['X-Request-ID'] = crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
 
     return config
   },
@@ -86,7 +86,15 @@ api.interceptors.response.use(
       case 401: {
         const authStore = useAuthStore()
 
-        // Token 过期，尝试刷新
+        // Token 过期，尝试刷新（已在 retry 请求中则跳过，避免无限循环）
+        if (error.config?._retry) {
+          // 已重试过的请求直接清除认证，跳转登录
+          authStore.clearAuth()
+          await router.push({ name: 'Login' })
+          ElMessage.error('登录已过期，请重新登录')
+          break
+        }
+
         if (!isRefreshing && authStore.refreshToken) {
           isRefreshing = true
 
@@ -98,9 +106,10 @@ api.interceptors.response.use(
             retryQueue.forEach(({ resolve }) => resolve(newToken))
             retryQueue = []
 
-            // 重试当前请求
+            // 重试当前请求（标记 _retry 防止递归）
             if (error.config) {
               error.config.headers.Authorization = `Bearer ${newToken}`
+              error.config._retry = true
               return api.request(error.config)
             }
           } catch (refreshError) {
@@ -113,19 +122,24 @@ api.interceptors.response.use(
           } finally {
             isRefreshing = false
           }
-        } else {
+        } else if (isRefreshing) {
           // 正在刷新中，将请求加入队列
           return new Promise((resolve, reject) => {
             retryQueue.push({
               resolve: (token: string) => {
                 if (error.config) {
                   error.config.headers.Authorization = `Bearer ${token}`
+                  error.config._retry = true
                   resolve(api.request(error.config))
                 }
               },
               reject,
             })
           })
+        } else {
+          // 没有 refreshToken，直接清除并跳转登录
+          authStore.clearAuth()
+          await router.push({ name: 'Login' })
         }
         break
       }

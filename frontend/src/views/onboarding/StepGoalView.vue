@@ -135,6 +135,11 @@ async function handleComplete(): Promise<void> {
     // 更新本地状态
     userStore.completeOnboarding()
 
+    // 确保 authStore 中的 onboarding 状态同步更新（防止 fetchCurrentUser 返回旧数据）
+    if (authStore.user) {
+      authStore.user.onboarding_completed = true
+    }
+
     ElMessage.success('引导完成，开始你的学习之旅！')
     const redirect = (router.currentRoute.value.query.redirect as string) || '/'
     await router.push(redirect)

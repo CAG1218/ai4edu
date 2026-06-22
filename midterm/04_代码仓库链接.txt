@@ -1,9 +1,7 @@
-本项目代码仓库地址：
-
-https://github.com/chenanguo/ai4edu
+代码仓库地址：https://github.com/CAG1218/ai4edu
 
 说明：
-1. 当前仓库为私有仓库。如需访问权限，请联系项目负责人陈安国（邮箱：admin@ai4edu.com）。
+1.已公开。
 2. 如评审者无法访问仓库，可查看提交压缩包中的 `src/` 源码目录（已包含在压缩包内）。
 3. 请注意：仓库中的 `.env` 文件和 `secrets/` 目录已通过 `.gitignore` 排除，不包含任何 API Key、账号密码或私有 Token。
 4. 如需在本地运行完整系统，请参考 `05_代码运行说明.md` 进行环境配置。
