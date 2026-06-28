@@ -178,10 +178,19 @@ async def seed_data():
 
     print("开始数据填充...")
 
-    # 创建所有表
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    print("数据库表创建完成")
+    # 创建所有表（仅 PostgreSQL 表，跳过 ClickHouse 等外部数据库的表）
+    print("创建数据库表...")
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        print("数据库表创建完成")
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "clickhouse" in err_msg or "schema" in err_msg:
+            print(f"⚠️ 跳过非 PostgreSQL 表创建（{type(e).__name__}），继续初始化数据...")
+        else:
+            raise
+    print("数据库表就绪")
 
     async with async_session_factory() as session:
         from sqlalchemy.future import select
