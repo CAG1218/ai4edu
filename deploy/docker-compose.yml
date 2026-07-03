@@ -49,17 +49,23 @@ services:
       context: ../backend
       dockerfile: Dockerfile
     container_name: ai4edu-celery-worker
-    command: celery -A app.celery worker --loglevel=info --concurrency=4
+    command: celery -A app.core.celery_app worker --loglevel=info --concurrency=4
     env_file:
       - ../backend/.env
     environment:
       - POSTGRES_HOST=postgres
+      - NEO4J_URI=bolt://neo4j:7687
       - REDIS_HOST=redis
+      - MINIO_ENDPOINT=minio:9002
+      - ELASTICSEARCH_HOST=http://elasticsearch:9200
+      - CLICKHOUSE_HOST=clickhouse
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
     depends_on:
-      - redis
-      - postgres
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - ai4edu-network
@@ -70,16 +76,21 @@ services:
       context: ../backend
       dockerfile: Dockerfile
     container_name: ai4edu-celery-beat
-    command: celery -A app.celery beat --loglevel=info
+    command: celery -A app.core.celery_app beat --loglevel=info
     env_file:
       - ../backend/.env
     environment:
       - POSTGRES_HOST=postgres
+      - NEO4J_URI=bolt://neo4j:7687
       - REDIS_HOST=redis
+      - MINIO_ENDPOINT=minio:9002
+      - ELASTICSEARCH_HOST=http://elasticsearch:9200
+      - CLICKHOUSE_HOST=clickhouse
       - CELERY_BROKER_URL=redis://redis:6379/1
       - CELERY_RESULT_BACKEND=redis://redis:6379/2
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - ai4edu-network

@@ -21,7 +21,7 @@ from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, get_db
 from app.models.teacher_method import ClassroomRecord
 from app.models.user import User
 from app.schemas.classroom import ClassroomRecordResponse
@@ -83,7 +83,7 @@ async def create_classroom_record(
     course_id: Optional[int] = Form(None, description="课程ID"),
     file: UploadFile = File(..., description="板书图片或录播视频文件"),
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_dep),
+    db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """上传板书图片或录播视频，创建课堂记录并异步处理
 
@@ -93,8 +93,6 @@ async def create_classroom_record(
     3. 创建 ClassroomRecord（status=pending）
     4. 根据 record_type 触发对应 Celery 任务
     """
-    from app.database import get_db
-
     # 校验文件类型
     content_type = file.content_type or ""
     if record_type == "board_image":
@@ -183,7 +181,7 @@ async def list_classroom_records(
     page: int = 1,
     page_size: int = 20,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_dep),
+    db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """分页获取课堂记录列表，支持 classroom_id/course_id/status 筛选"""
     conditions = [ClassroomRecord.tenant_id == (current_user.tenant_id or 0)]
@@ -229,7 +227,7 @@ async def list_classroom_records(
 async def get_classroom_record(
     record_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_dep),
+    db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """获取课堂记录详情（含 transcript/segments）"""
     record = await _get_record(db, record_id)
@@ -247,7 +245,7 @@ async def get_classroom_record(
 async def delete_classroom_record(
     record_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_dep),
+    db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """删除课堂记录"""
     record = await _get_record(db, record_id)
@@ -264,7 +262,7 @@ async def delete_classroom_record(
 async def reprocess_record(
     record_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db_dep),
+    db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """重新触发 OCR/ASR 处理"""
     record = await _get_record(db, record_id)
@@ -295,13 +293,6 @@ async def reprocess_record(
 
 
 # ============ 辅助函数 ============
-
-async def get_db_dep():
-    """获取异步数据库会话（依赖注入）"""
-    from app.database import get_db
-    async for session in get_db():
-        yield session
-
 
 async def _get_record(db: AsyncSession, record_id: int) -> Optional[ClassroomRecord]:
     """查询课堂记录"""
