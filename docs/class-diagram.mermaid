@@ -1,0 +1,213 @@
+%% AI 智能体中心 - 类图
+%% 文件: docs/class-diagram.mermaid
+
+classDiagram
+    %% ========== 数据模型层 ==========
+    class TeacherMethod {
+        +int id
+        +int tenant_id
+        +int teacher_id
+        +Optional~int~ course_id
+        +Optional~int~ classroom_id
+        +str title
+        +str content
+        +str method_type
+        +Optional~str~ knowledge_points
+        +Optional~int~ source_resource_id
+        +Optional~str~ source_url
+        +str subject
+        +bool is_active
+        +datetime created_at
+        +datetime updated_at
+    }
+
+    class ClassroomRecord {
+        +int id
+        +int tenant_id
+        +int classroom_id
+        +int course_id
+        +str record_type
+        +Optional~int~ resource_id
+        +Optional~str~ transcript
+        +Optional~str~ segments
+        +Optional~str~ knowledge_points
+        +str status
+        +datetime created_at
+    }
+
+    %% ========== 核心引擎层 ==========
+    class ModelProvider {
+        +str provider
+        +str api_key
+        +str api_base
+        +str model_name
+        +bool is_available
+        +int failure_count
+        +Optional~datetime~ last_error_time
+        +str last_error_msg
+        +bool is_configured
+    }
+
+    class LLMRouter {
+        -Dict~str, ModelProvider~ _providers
+        -List~str~ _priority
+        -bool _initialized
+        +async _initialize() void
+        +async get_model(scene_type, preferred) Optional~ModelProvider~
+        +async call_llm(messages, scene_type, preferred, temperature, max_tokens) Dict
+        +async call_llm_stream(messages, scene_type, preferred, temperature, max_tokens) AsyncGenerator
+        +async health_check() List~Dict~
+        -_should_skip(provider) bool
+        -async _call_provider(provider, messages, temperature, max_tokens) Dict
+        -async _call_provider_stream(provider, messages, temperature, max_tokens) AsyncGenerator
+        -_record_failure(provider, error) void
+        -_record_success(provider) void
+        +has_any_configured() bool
+    }
+
+    class Citation {
+        +str type
+        +str title
+        +str source_url
+        +Optional~str~ teacher_name
+    }
+
+    class ContextResult {
+        +str context_text
+        +List~Citation~ citations
+        +Dict~str, int~ summary
+    }
+
+    class ResourceContextBuilder {
+        +async build(db, user_id, tenant_id, course_id, query, scene_type) ContextResult
+        -async _search_notes(db, user_id, tenant_id, course_id, query, limit) List
+        -async _search_resources(db, tenant_id, course_id, query, limit) List
+        -async _search_graph_nodes(query, limit) List
+        -async _search_teacher_methods(db, tenant_id, course_id, query, limit) List
+        -_build_context_text(notes, resources, graph_nodes, teacher_methods) str
+        -_build_citations(notes, resources, graph_nodes, teacher_methods) List~Citation~
+    }
+
+    class ScenePreset {
+        +str scene_type
+        +str name
+        +str description
+        +str icon
+        +str system_prompt
+        +str preferred_model
+        +str default_agent_type
+    }
+
+    class SceneConfig {
+        +SCENE_PRESETS: Dict~str, ScenePreset~
+    }
+
+    %% ========== Agent 层 ==========
+    class BaseAgent {
+        <<abstract>>
+        +str agent_type
+        +str system_prompt*
+        +_build_messages(messages, context) List
+        +_summarize_context(context) str
+        +async execute(messages, context) Dict
+        +async stream_execute(messages, context) AsyncGenerator
+        -async _call_llm(messages, temperature, max_tokens) Dict
+        -_demo_reply(messages) str
+    }
+
+    class RAGAgent {
+        +str agent_type = "rag"
+        +str system_prompt
+        +async execute(messages, context) Dict
+        +async stream_execute(messages, context) AsyncGenerator
+        -async _search_knowledge(query, context) Dict
+        -async _query_graph(query, context) List
+        -_augment_messages(messages, search_results, graph_context) List
+    }
+
+    class SubjectAgent {
+        +str agent_type = "subject"
+        -str _subject
+        +str system_prompt
+        +async execute(messages, context) Dict
+        +async stream_execute(messages, context) AsyncGenerator
+    }
+
+    %% ========== API 层 ==========
+    class AgentsAPI {
+        +GET /agents/models
+        +GET /agents/scenes
+        +GET /agents/sessions
+        +POST /agents/sessions
+        +GET /agents/sessions/:id
+        +POST /agents/sessions/:id/messages
+        +DELETE /agents/sessions/:id
+        +GET /agents/sessions/:id/context
+        +GET /agents/types
+        +POST /agents/intent
+        +WS /agents/ws/:session_id
+    }
+
+    %% ========== Schema 层 ==========
+    class ModelInfoResponse {
+        +str provider
+        +str model
+        +str status
+        +bool is_default
+    }
+
+    class ScenePresetResponse {
+        +str scene_type
+        +str name
+        +str description
+        +str icon
+        +str preferred_model
+    }
+
+    class CitationSchema {
+        +str type
+        +str title
+        +str source_url
+        +Optional~str~ teacher_name
+    }
+
+    class ContextSummary {
+        +int notes_count
+        +int resources_count
+        +int graph_nodes_count
+        +int teacher_methods_count
+    }
+
+    class SendMessageResponse {
+        +Dict user_message
+        +Dict assistant_message
+        +List~CitationSchema~ citations
+        +ContextSummary context_summary
+        +str model_used
+        +bool model_fallback
+    }
+
+    %% ========== 关系 ==========
+    LLMRouter "1" *-- "0..3" ModelProvider : manages
+    ResourceContextBuilder ..> Citation : creates
+    ResourceContextBuilder ..> ContextResult : returns
+    ContextResult *-- "0..*" Citation : contains
+    SceneConfig "1" *-- "4" ScenePreset : defines
+
+    BaseAgent ..> LLMRouter : uses _call_llm
+    BaseAgent <|-- RAGAgent : extends
+    BaseAgent <|-- SubjectAgent : extends
+    RAGAgent ..> ResourceContextBuilder : uses
+    SubjectAgent ..> ResourceContextBuilder : uses
+
+    ResourceContextBuilder ..> TeacherMethod : queries
+    TeacherMethod "1" --> "0..1" ClassroomRecord : relates
+
+    AgentsAPI ..> LLMRouter : calls health_check
+    AgentsAPI ..> ResourceContextBuilder : calls build
+    AgentsAPI ..> SceneConfig : reads presets
+    AgentsAPI ..> RAGAgent : instantiates
+    AgentsAPI ..> SubjectAgent : instantiates
+    AgentsAPI ..> SendMessageResponse : returns
+    AgentsAPI ..> ModelInfoResponse : returns
+    AgentsAPI ..> ScenePresetResponse : returns

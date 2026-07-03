@@ -1,11 +1,13 @@
 """
 AI4Edu 学科专家Agent
 提供数学/物理/化学/生物/历史/地理等学科专业解答
+注入 ResourceContextBuilder 实现用户/课程级别的资源感知
 """
 import logging
 from typing import Any, Dict, List, Optional
 
 from app.agents.base import BaseAgent
+from app.agents.resource_context import resource_context_builder
 
 logger = logging.getLogger(__name__)
 
@@ -132,10 +134,44 @@ class SubjectAgent(BaseAgent):
         messages: List[Dict[str, str]],
         context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """执行学科问答"""
+        """执行学科问答
+
+        在调用 LLM 前，通过 ResourceContextBuilder 构建用户学习资源上下文
+        （笔记/资源/图谱/老师方法），注入到提示词中。
+        """
         # 从上下文中获取学科信息
         if context and context.get("subject"):
             self._subject = context["subject"]
+
+        # 构建 ResourceContext（笔记/资源/图谱/老师方法）
+        if context and context.get("db") and context.get("user_id"):
+            # 提取用户查询
+            user_query = ""
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    user_query = msg.get("content", "")
+                    break
+
+            try:
+                context_result = await resource_context_builder.build(
+                    db=context["db"],
+                    user_id=context["user_id"],
+                    tenant_id=context.get("tenant_id", 0),
+                    course_id=context.get("course_id"),
+                    query=user_query,
+                    scene_type=context.get("scene_type"),
+                )
+                # 将资源上下文注入到 context 中
+                if context_result.context_text:
+                    context["resource_context"] = context_result.context_text
+                # 将 citations 和 summary 透传到返回结果
+                context["citations"] = resource_context_builder.citations_to_dicts(
+                    context_result.citations
+                )
+                context["context_summary"] = context_result.summary
+            except Exception as e:
+                logger.error("SubjectAgent ResourceContext 构建失败: %s", e)
+
         return await super().execute(messages, context)
 
     async def stream_execute(

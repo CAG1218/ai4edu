@@ -1,11 +1,13 @@
 """
 AI4Edu RAG知识问答Agent
 调用已有的search_service + graph_service，支持流式回答
+注入 ResourceContextBuilder 实现用户/课程级别的资源感知
 """
 import logging
 from typing import Any, Dict, List, Optional
 
 from app.agents.base import BaseAgent
+from app.agents.resource_context import resource_context_builder
 from app.services.search_service import search_service
 from app.services.graph_service import graph_service
 
@@ -39,6 +41,9 @@ class RAGAgent(BaseAgent):
         """
         执行RAG问答：先检索，再生成
 
+        在原有检索基础上，注入 ResourceContextBuilder 产出的
+        用户笔记/课程资源/老师方法/知识图谱上下文。
+
         Args:
             messages: 对话消息列表
             context: 上下文信息
@@ -56,21 +61,45 @@ class RAGAgent(BaseAgent):
         if not user_query:
             return await super().execute(messages, context)
 
-        # 1. 混合检索
+        # 1. 构建 ResourceContext（笔记/资源/图谱/老师方法）
+        context_result = None
+        if context and context.get("db") and context.get("user_id"):
+            try:
+                context_result = await resource_context_builder.build(
+                    db=context["db"],
+                    user_id=context["user_id"],
+                    tenant_id=context.get("tenant_id", 0),
+                    course_id=context.get("course_id"),
+                    query=user_query,
+                    scene_type=context.get("scene_type"),
+                )
+                # 将资源上下文注入到 context 中
+                if context_result.context_text:
+                    context["resource_context"] = context_result.context_text
+                # 将 citations 和 summary 透传到返回结果
+                context["citations"] = resource_context_builder.citations_to_dicts(
+                    context_result.citations
+                )
+                context["context_summary"] = context_result.summary
+            except Exception as e:
+                logger.error("ResourceContextBuilder 构建失败: %s", e)
+
+        # 2. 混合检索（保持原有逻辑）
         search_results = await self._search_knowledge(user_query, context)
 
-        # 2. 图谱查询
+        # 3. 图谱查询
         graph_context = await self._query_graph(user_query, context)
 
-        # 3. 构建增强消息
+        # 4. 构建增强消息
         augmented_messages = self._augment_messages(messages, search_results, graph_context)
 
-        # 4. 调用LLM
+        # 5. 调用LLM
         result = await super().execute(augmented_messages, context)
 
-        # 5. 附加检索来源
+        # 6. 附加检索来源
         result["sources"] = search_results.get("results", [])[:5]
         result["graph_context"] = graph_context
+
         return result
 
     async def stream_execute(

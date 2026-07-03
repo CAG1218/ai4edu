@@ -97,6 +97,34 @@ class Settings(BaseSettings):
     OPENAI_API_BASE: str = "https://api.openai.com/v1"
     OPENAI_MODEL: str = "gpt-4o"
 
+    # ============ 多模型配置 ============
+    # 多模型路由开关（false 时回退到单一 OPENAI_* 配置）
+    LLM_MULTI_MODEL_ENABLED: bool = True
+
+    # DeepSeek
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_API_BASE: str = "https://api.deepseek.com/v1"
+    DEEPSEEK_MODEL: str = "deepseek-chat"
+
+    # 腾讯混元（OpenAI 兼容模式）
+    HUNYUAN_API_KEY: str = ""
+    HUNYUAN_API_BASE: str = "https://api.hunyuan.cloud.tencent.com/v1"
+    HUNYUAN_MODEL: str = "hunyuan-pro"
+
+    # 阿里通义千问（DashScope OpenAI 兼容模式）
+    QWEN_API_KEY: str = ""
+    QWEN_API_BASE: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    QWEN_MODEL: str = "qwen-plus"
+
+    # 模型优先级（逗号分隔，从高到低）
+    LLM_MODEL_PRIORITY: str = "deepseek,qwen,hunyuan"
+
+    # 单模型连续失败次数阈值（超过后切换备选）
+    LLM_MAX_FAILURES: int = 2
+
+    # 速率限制（每分钟最大请求数，0=不限制）
+    LLM_RATE_LIMIT_PER_MINUTE: int = 60
+
     # Celery
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"

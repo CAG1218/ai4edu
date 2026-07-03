@@ -1,11 +1,21 @@
 /**
  * AI4Edu Agent Store
  * 管理AI会话列表、当前会话、消息流、Agent类型、流式消息接收
+ * 新增: 场景预设、模型列表、引用来源、上下文摘要
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import api from '@/services/api'
-import { agentApi, type AgentSession, type AgentMessage, type AgentTypeInfo } from '@/services/agent'
+import {
+  agentApi,
+  type AgentSession,
+  type AgentMessage,
+  type AgentTypeInfo,
+  type ScenePreset,
+  type ModelInfo,
+  type Citation,
+  type ContextSummary,
+} from '@/services/agent'
 import { ElMessage } from 'element-plus'
 
 export const useAgentStore = defineStore('agent', () => {
@@ -31,6 +41,14 @@ export const useAgentStore = defineStore('agent', () => {
   const totalSessions = ref<number>(0)
   /** 当前页码 */
   const currentPage = ref<number>(1)
+  /** 场景预设列表 */
+  const scenes = ref<ScenePreset[]>([])
+  /** 模型列表 */
+  const models = ref<ModelInfo[]>([])
+  /** 当前场景 */
+  const currentScene = ref<ScenePreset | null>(null)
+  /** 当前上下文摘要（从最近 AI 消息 metadata 获取） */
+  const currentContextSummary = ref<ContextSummary | null>(null)
   /** WebSocket实例 */
   let wsConnection: WebSocket | null = null
 
@@ -39,7 +57,7 @@ export const useAgentStore = defineStore('agent', () => {
   /** 当前Agent类型 */
   const currentAgentType = computed<AgentTypeInfo | null>(() => {
     if (!currentSession.value) return null
-    return agentTypes.value.find((t) => t.type === currentSession.value!.agent_type) ?? null
+    return agentTypes.value.find((t) => t.agent_type === currentSession.value!.agent_type) ?? null
   })
 
   /** 是否有活跃会话 */
@@ -50,6 +68,11 @@ export const useAgentStore = defineStore('agent', () => {
     return [...messages.value].sort(
       (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     )
+  })
+
+  /** 可用模型数量 */
+  const availableModelCount = computed<number>(() => {
+    return models.value.filter((m) => m.status === 'available').length
   })
 
   // ============ Actions ============
@@ -99,11 +122,41 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   /**
+   * 创建场景会话（新增）
+   * @param sceneType 场景类型
+   * @param courseId 课程ID（可选）
+   * @param title 会话标题（可选）
+   */
+  async function createSceneSession(
+    sceneType: string,
+    courseId?: number,
+    title?: string,
+  ): Promise<AgentSession | null> {
+    try {
+      // 设置当前场景
+      currentScene.value = scenes.value.find((s) => s.scene_type === sceneType) || null
+      const session = await agentApi.createSession({
+        scene_type: sceneType,
+        course_id: courseId,
+        title: title || `${currentScene.value?.name || 'AI'}会话`,
+      })
+      sessions.value.unshift(session)
+      currentSession.value = session
+      messages.value = []
+      return session
+    } catch (error) {
+      console.error('创建场景会话失败:', error)
+      ElMessage.error('创建场景会话失败')
+      return null
+    }
+  }
+
+  /**
    * 选择会话
    * @param sessionId 会话ID
    */
   async function selectSession(sessionId: string): Promise<void> {
-    const session = sessions.value.find((s) => s.id === sessionId)
+    const session = sessions.value.find((s) => String(s.id) === String(sessionId))
     if (!session) {
       try {
         currentSession.value = await agentApi.getSession(sessionId)
@@ -113,6 +166,12 @@ export const useAgentStore = defineStore('agent', () => {
       }
     } else {
       currentSession.value = session
+    }
+    // 设置当前场景
+    if (currentSession.value?.scene_type) {
+      currentScene.value = scenes.value.find(
+        (s) => s.scene_type === currentSession.value!.scene_type,
+      ) || null
     }
     // 加载消息历史
     await fetchMessages(sessionId)
@@ -127,8 +186,11 @@ export const useAgentStore = defineStore('agent', () => {
   async function fetchMessages(sessionId: string): Promise<void> {
     messagesLoading.value = true
     try {
-      const response = await api.get(`/agent/sessions/${sessionId}/messages`)
-      messages.value = response.data as AgentMessage[]
+      // 后端 get_session 端点返回会话详情（含 messages 数组）
+      const sessionData = await agentApi.getSession(sessionId) as unknown as {
+        messages?: AgentMessage[]
+      }
+      messages.value = sessionData.messages || []
     } catch (error) {
       console.error('获取消息列表失败:', error)
       messages.value = []
@@ -158,8 +220,26 @@ export const useAgentStore = defineStore('agent', () => {
     messages.value.push(userMessage)
 
     try {
-      const assistantMessage = await agentApi.sendMessage(currentSession.value.id, { content })
+      const result = await agentApi.sendMessage(currentSession.value.id, { content })
+      // 添加 AI 消息（含 metadata）
+      const assistantMessage: AgentMessage = {
+        id: String(result.assistant_message.id),
+        session_id: currentSession.value.id,
+        role: 'assistant',
+        content: result.assistant_message.content,
+        model_name: result.assistant_message.model_name,
+        created_at: new Date().toISOString(),
+        metadata: {
+          citations: result.citations,
+          context_summary: result.context_summary,
+          model_used: result.model_used,
+          model_fallback: result.model_fallback,
+        },
+      }
       messages.value.push(assistantMessage)
+
+      // 更新上下文摘要
+      currentContextSummary.value = result.context_summary
     } catch (error) {
       console.error('发送消息失败:', error)
       ElMessage.error('发送消息失败')
@@ -208,22 +288,41 @@ export const useAgentStore = defineStore('agent', () => {
       try {
         const data = JSON.parse(event.data as string)
 
-        if (data.type === 'token') {
+        if (data.type === 'context') {
+          // 接收上下文摘要
+          currentContextSummary.value = data.summary as ContextSummary
+        } else if (data.type === 'chunk' || data.type === 'token') {
           // 流式追加内容
           streamingContent.value += data.content
-        } else if (data.type === 'message_end') {
+        } else if (data.type === 'done' || data.type === 'message_end') {
           // 消息结束，将流式内容转为正式消息
+          const citations: Citation[] = data.citations || []
+          const contextSummary: ContextSummary | null = data.context_summary || data.metadata?.context_summary || null
+          const modelUsed: string = data.model_used || data.metadata?.model_used || ''
+          const modelFallback: boolean = data.model_fallback || data.metadata?.model_fallback || false
+
           const assistantMessage: AgentMessage = {
             id: data.message_id || `msg_${Date.now()}`,
             session_id: currentSession.value!.id,
             role: 'assistant',
             content: streamingContent.value,
+            model_name: modelUsed,
             created_at: new Date().toISOString(),
-            metadata: data.metadata,
+            metadata: {
+              citations,
+              context_summary: contextSummary,
+              model_used: modelUsed,
+              model_fallback: modelFallback,
+            },
           }
           messages.value.push(assistantMessage)
           streamingContent.value = ''
           isStreaming.value = false
+
+          // 更新上下文摘要
+          if (contextSummary) {
+            currentContextSummary.value = contextSummary
+          }
         } else if (data.type === 'error') {
           ElMessage.error(data.message || 'AI回复出错')
           isStreaming.value = false
@@ -270,13 +369,35 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   /**
+   * 获取场景预设列表（新增）
+   */
+  async function fetchScenes(): Promise<void> {
+    try {
+      scenes.value = await agentApi.listScenes()
+    } catch (error) {
+      console.error('获取场景列表失败:', error)
+    }
+  }
+
+  /**
+   * 获取模型列表（新增）
+   */
+  async function fetchModels(): Promise<void> {
+    try {
+      models.value = await agentApi.listModels()
+    } catch (error) {
+      console.error('获取模型列表失败:', error)
+    }
+  }
+
+  /**
    * 删除会话
    * @param sessionId 会话ID
    */
   async function deleteSession(sessionId: string): Promise<void> {
     try {
       await agentApi.deleteSession(sessionId)
-      sessions.value = sessions.value.filter((s) => s.id !== sessionId)
+      sessions.value = sessions.value.filter((s) => String(s.id) !== String(sessionId))
       if (currentSession.value?.id === sessionId) {
         currentSession.value = null
         messages.value = []
@@ -297,6 +418,7 @@ export const useAgentStore = defineStore('agent', () => {
     currentSession.value = null
     messages.value = []
     streamingContent.value = ''
+    currentContextSummary.value = null
   }
 
   return {
@@ -311,19 +433,27 @@ export const useAgentStore = defineStore('agent', () => {
     messagesLoading,
     totalSessions,
     currentPage,
+    scenes,
+    models,
+    currentScene,
+    currentContextSummary,
     // Getters
     currentAgentType,
     hasActiveSession,
     sortedMessages,
+    availableModelCount,
     // Actions
     fetchSessions,
     createSession,
+    createSceneSession,
     selectSession,
     fetchMessages,
     sendMessage,
     streamMessage,
     disconnectStream,
     fetchAgentTypes,
+    fetchScenes,
+    fetchModels,
     deleteSession,
     clearCurrentSession,
   }

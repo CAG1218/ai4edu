@@ -1,6 +1,7 @@
 """
 AI4Edu Agent相关Schema
 SessionCreate / SessionResponse / MessageCreate / MessageResponse / AgentTypeResponse
+新增: ModelInfoResponse / ScenePresetResponse / CitationSchema / ContextSummary / SendMessageResponse / SessionContextResponse
 """
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -11,7 +12,7 @@ from pydantic import BaseModel, Field
 class SessionCreate(BaseModel):
     """创建AI会话请求"""
 
-    agent_type: str = Field(..., description="智能体类型", min_length=1, max_length=30)
+    agent_type: Optional[str] = Field(None, description="智能体类型（scene_type 存在时可由预设决定）", max_length=30)
     title: Optional[str] = Field(None, description="会话标题", max_length=200)
     scene_type: Optional[str] = Field(None, description="场景类型", max_length=30)
     course_id: Optional[int] = Field(None, description="关联课程ID")
@@ -75,3 +76,65 @@ class IntentResult(BaseModel):
     intent: str = Field(..., description="意图类型")
     agent_type: str = Field(..., description="对应的Agent类型")
     confidence: float = Field(1.0, description="置信度")
+
+
+# ============ 多模型路由相关 Schema ============
+
+
+class ModelInfoResponse(BaseModel):
+    """模型信息响应"""
+
+    provider: str = Field(..., description="提供商: deepseek/qwen/hunyuan")
+    model: str = Field(..., description="模型名称")
+    status: str = Field(..., description="状态: available/unavailable/not_configured")
+    is_default: bool = Field(False, description="是否默认首选")
+    is_configured: bool = Field(True, description="是否已配置API Key")
+
+
+class ScenePresetResponse(BaseModel):
+    """场景预设响应"""
+
+    scene_type: str = Field(..., description="场景类型")
+    name: str = Field(..., description="场景名称")
+    description: str = Field(..., description="场景描述")
+    icon: str = Field(..., description="图标")
+    preferred_model: str = Field(..., description="偏好模型")
+
+
+class CitationSchema(BaseModel):
+    """引用来源"""
+
+    type: str = Field(..., description="类型: note/resource/teacher_method/graph_node")
+    title: str = Field(..., description="标题")
+    source_url: str = Field(..., description="跳转路径")
+    teacher_name: Optional[str] = Field(None, description="教师名(仅teacher_method)")
+
+
+class ContextSummary(BaseModel):
+    """上下文摘要"""
+
+    notes_count: int = Field(0, description="笔记数")
+    resources_count: int = Field(0, description="资源数")
+    graph_nodes_count: int = Field(0, description="图谱节点数")
+    teacher_methods_count: int = Field(0, description="老师方法数")
+
+
+class SendMessageResponse(BaseModel):
+    """发送消息响应（改造）"""
+
+    user_message: Dict[str, Any] = Field(..., description="用户消息")
+    assistant_message: Dict[str, Any] = Field(..., description="AI消息")
+    citations: List[CitationSchema] = Field(default_factory=list, description="引用来源")
+    context_summary: ContextSummary = Field(default_factory=ContextSummary, description="上下文摘要")
+    model_used: str = Field("", description="使用的模型")
+    model_fallback: bool = Field(False, description="是否发生了模型切换")
+
+
+class SessionContextResponse(BaseModel):
+    """会话上下文响应"""
+
+    notes: List[Dict[str, Any]] = Field(default_factory=list)
+    resources: List[Dict[str, Any]] = Field(default_factory=list)
+    graph_nodes: List[Dict[str, Any]] = Field(default_factory=list)
+    teacher_methods: List[Dict[str, Any]] = Field(default_factory=list)
+    summary: ContextSummary = Field(default_factory=ContextSummary)
