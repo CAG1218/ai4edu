@@ -114,6 +114,63 @@ export interface SendMessageResponse {
   agent_type?: string
 }
 
+// ============ v2 新增类型 ============
+
+/** 模型负载均衡状态 */
+export interface ModelBalancerProvider {
+  provider: string
+  model_name: string
+  is_available: boolean
+  is_configured: boolean
+  avg_latency_ms: number
+  success_rate: number
+  failure_count: number
+  last_check_time: number
+}
+
+/** 模型负载均衡响应 */
+export interface ModelBalancerStatus {
+  providers: ModelBalancerProvider[]
+  current_strategy: string
+  recommended_model: string | null
+}
+
+/** 课堂记录 */
+export interface ClassroomRecord {
+  id: number
+  classroom_id: number
+  course_id: number
+  record_type: string
+  status: string
+  transcript?: string
+  segments?: Array<{ text: string; start: number; end: number }>
+  knowledge_points?: string[]
+  provider?: string
+  error_msg?: string
+  file_url?: string
+  created_at?: string
+  updated_at?: string
+}
+
+/** 导出记录 */
+export interface ExportRecord {
+  id: number
+  session_id: number
+  export_format: string
+  status: string
+  file_size: number
+  error_msg?: string
+  created_at?: string
+  completed_at?: string
+  expired_at?: string
+}
+
+/** 导出下载链接 */
+export interface ExportDownload {
+  download_url: string
+  expired_at: string
+}
+
 // ============ API 方法 ============
 
 export const agentApi = {
@@ -179,5 +236,78 @@ export const agentApi = {
     const baseUrl = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000'
     const token = localStorage.getItem('access_token') || ''
     return `${baseUrl}/api/v1/agents/ws/${sessionId}?token=${token}`
+  },
+
+  // ============ v2 新增: 模型负载均衡 ============
+
+  /** 获取模型负载均衡状态 */
+  async getModelBalancerStatus(): Promise<ModelBalancerStatus> {
+    const response = await api.get('/agents/models/balancer')
+    return response.data as ModelBalancerStatus
+  },
+
+  // ============ v2 新增: 课堂记录 ============
+
+  /** 获取课堂记录列表 */
+  async listClassroomRecords(params?: {
+    classroom_id?: number
+    course_id?: number
+    record_type?: string
+    status_filter?: string
+    page?: number
+    page_size?: number
+  }): Promise<{ items: ClassroomRecord[]; total: number; page: number; page_size: number }> {
+    const response = await api.get('/agents/classroom-records', { params })
+    return response.data as { items: ClassroomRecord[]; total: number; page: number; page_size: number }
+  },
+
+  /** 获取课堂记录详情 */
+  async getClassroomRecord(recordId: number): Promise<ClassroomRecord> {
+    const response = await api.get(`/agents/classroom-records/${recordId}`)
+    return response.data as ClassroomRecord
+  },
+
+  /** 重新处理课堂记录 */
+  async reprocessClassroomRecord(recordId: number): Promise<void> {
+    await api.post(`/agents/classroom-records/${recordId}/reprocess`)
+  },
+
+  /** 删除课堂记录 */
+  async deleteClassroomRecord(recordId: number): Promise<void> {
+    await api.delete(`/agents/classroom-records/${recordId}`)
+  },
+
+  // ============ v2 新增: 对话导出 ============
+
+  /** 创建导出任务 */
+  async createExport(sessionId: number, exportFormat: string): Promise<ExportRecord> {
+    const response = await api.post(`/agents/sessions/${sessionId}/exports`, {
+      export_format: exportFormat,
+    })
+    return response.data as ExportRecord
+  },
+
+  /** 获取会话的导出列表 */
+  async listExports(
+    sessionId: number,
+    page: number = 1,
+    pageSize: number = 20,
+  ): Promise<{ items: ExportRecord[]; total: number; page: number; page_size: number }> {
+    const response = await api.get(`/agents/sessions/${sessionId}/exports`, {
+      params: { page, page_size: pageSize },
+    })
+    return response.data as { items: ExportRecord[]; total: number; page: number; page_size: number }
+  },
+
+  /** 获取导出详情 */
+  async getExport(exportId: number): Promise<ExportRecord> {
+    const response = await api.get(`/agents/exports/${exportId}`)
+    return response.data as ExportRecord
+  },
+
+  /** 获取导出下载链接 */
+  async downloadExport(exportId: number): Promise<ExportDownload> {
+    const response = await api.get(`/agents/exports/${exportId}/download`)
+    return response.data as ExportDownload
   },
 }

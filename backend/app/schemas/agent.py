@@ -138,3 +138,21 @@ class SessionContextResponse(BaseModel):
     graph_nodes: List[Dict[str, Any]] = Field(default_factory=list)
     teacher_methods: List[Dict[str, Any]] = Field(default_factory=list)
     summary: ContextSummary = Field(default_factory=ContextSummary)
+
+
+# ============ v2 新增：负载均衡相关 Schema ============
+
+
+class ModelBalancerResponse(BaseModel):
+    """模型负载均衡状态响应"""
+
+    providers: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="各 provider 健康状态列表",
+    )
+    current_strategy: str = Field(
+        "latency", description="当前负载均衡策略: latency/weighted/sticky"
+    )
+    recommended_model: Optional[str] = Field(
+        None, description="推荐模型（sticky 策略下）"
+    )

@@ -47,6 +47,10 @@ class TeacherMethod(Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, nullable=False, comment="是否启用"
     )
+    # v2 新增：教师推荐模型（用于负载均衡 sticky 策略优先匹配）
+    recommended_model: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True, comment="推荐模型(如 deepseek-chat)"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False, comment="创建时间"
     )
@@ -88,6 +92,40 @@ class ClassroomRecord(Base):
     status: Mapped[str] = mapped_column(
         String(20), default="pending", nullable=False, comment="状态: pending/processing/ready/failed"
     )
+    # v2 新增字段
+    file_url: Mapped[Optional[str]] = mapped_column(
+        String(500), nullable=True, comment="MinIO 文件路径"
+    )
+    provider: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True, comment="OCR/ASR provider: aliyun/tencent/mock"
+    )
+    error_msg: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="失败时的错误信息"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False, comment="创建时间"
     )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=True, comment="更新时间"
+    )
+
+    def to_dict(self) -> dict:
+        """转为字典"""
+        import json
+        return {
+            "id": self.id,
+            "tenant_id": self.tenant_id,
+            "classroom_id": self.classroom_id,
+            "course_id": self.course_id,
+            "record_type": self.record_type,
+            "resource_id": self.resource_id,
+            "transcript": self.transcript,
+            "segments": json.loads(self.segments) if self.segments else None,
+            "knowledge_points": json.loads(self.knowledge_points) if self.knowledge_points else None,
+            "status": self.status,
+            "file_url": self.file_url,
+            "provider": self.provider,
+            "error_msg": self.error_msg,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }

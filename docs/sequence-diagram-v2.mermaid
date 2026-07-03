@@ -1,0 +1,153 @@
+%% AI 智能体中心 v2 — 时序图集合
+%% 包含：OCR/ASR 提取流程、配额检查流程、对话导出流程、模型健康检查流程
+
+%% ============ 1. 板书/录播 OCR/ASR 提取流程 ============
+sequenceDiagram
+    participant T as 教师前端
+    participant API as FastAPI /classroom-records
+    participant MINIO as MinIO
+    participant DB as PostgreSQL
+    participant CELERY as Celery Worker
+    participant OCR as OCRProvider
+    participant ES as Elasticsearch
+
+    T->>API: POST /agents/classroom-records (file, type=board_image)
+    API->>API: 校验文件大小 ≤100MB
+    API->>MINIO: 上传文件到 ai4edu-resources bucket
+    MINIO-->>API: 返回 file_url
+    API->>DB: INSERT classroom_records (status=pending, file_url=...)
+    API->>CELERY: process_board_ocr.delay(record_id)
+    API-->>T: 201 {id, status=pending}
+
+    Note over CELERY: 异步处理
+    CELERY->>DB: UPDATE status=processing
+    CELERY->>OCR: ocr_provider.extract(file_url)
+    alt provider 可用
+        OCR-->>CELERY: OCRResult{text, confidence}
+        CELERY->>CELERY: 提取 knowledge_points
+        CELERY->>DB: UPDATE transcript, segments, knowledge_points, status=completed, provider
+        CELERY->>ES: POST /ai4edu/_doc/{record_id} {doc_type=classroom_record, transcript, ...}
+        ES-->>CELERY: 200 OK
+    else provider 不可用/异常
+        CELERY->>DB: UPDATE status=failed, error_msg=...
+    end
+
+    T->>API: GET /agents/classroom-records/{id} (轮询)
+    API->>DB: SELECT * FROM classroom_records WHERE id=?
+    API-->>T: 200 {status=completed, transcript=...}
+
+%% ============ 2. 配额检查 + LLM 调用流程 ============
+sequenceDiagram
+    participant U as 用户前端
+    participant API as FastAPI /sessions/{id}/messages
+    participant AGENT as BaseAgent
+    participant ROUTER as LLMRouter
+    participant QM as QuotaManager
+    participant REDIS as Redis
+    participant LLM as LLM Provider
+    participant DB as PostgreSQL
+
+    U->>API: POST /agents/sessions/{id}/messages {content}
+    API->>AGENT: agent.execute(user_input, context)
+    AGENT->>ROUTER: llm_router.call_llm(messages, tenant_id, session_id, user_id)
+
+    Note over ROUTER,QM: 配额检查
+    ROUTER->>QM: quota_manager.check_quota(tenant_id, est_tokens=1000)
+    QM->>REDIS: GET quota:{tenant_id}:daily:{date}
+    QM->>REDIS: GET quota:{tenant_id}:monthly:{year_month}
+    REDIS-->>QM: daily_used=450000, monthly_used=8000000
+    QM->>DB: SELECT * FROM tenant_quotas WHERE tenant_id=?
+    DB-->>QM: daily_limit=500000
+
+    alt 配额充足
+        QM-->>ROUTER: (True, "ok")
+        Note over ROUTER: 负载均衡选模型
+        ROUTER->>ROUTER: get_model(scene, strategy=latency)
+        ROUTER->>LLM: httpx POST /v1/chat/completions
+        LLM-->>ROUTER: {content, usage: {prompt_tokens, completion_tokens}}
+        ROUTER->>QM: quota_manager.record_usage(tenant_id, actual_tokens, provider, ...)
+        QM->>REDIS: INCRBY quota:{tenant_id}:daily:{date} {tokens}
+        QM->>REDIS: EXPIRE key 90000 (25h)
+        QM->>DB: INSERT llm_usage_logs (异步)
+        QM-->>ROUTER: ok
+        ROUTER-->>AGENT: LLM 回复内容
+        AGENT-->>API: 回复
+        API-->>U: 200 {message}
+    else 配额超限
+        QM-->>ROUTER: (False, "daily_limit_exceeded")
+        ROUTER->>QM: record_usage(tenant_id, 0, status="quota_exceeded")
+        ROUTER-->>AGENT: "今日 AI 额度已用完"
+        AGENT-->>API: 降级回复
+        API-->>U: 200 {message: "今日额度已用完..."}
+    end
+
+%% ============ 3. 对话导出流程 ============
+sequenceDiagram
+    participant U as 用户前端
+    participant API as FastAPI /export
+    participant DB as PostgreSQL
+    participant CELERY as Celery Worker
+    participant SVC as AgentExportService
+    participant MINIO as MinIO
+    participant MSG as AgentMessage 表
+
+    U->>API: POST /agents/sessions/{id}/export {format=pdf}
+    API->>DB: 验证 session 属于 current_user
+    API->>DB: INSERT agent_exports (status=pending)
+    API->>CELERY: export_session_task.delay(export_id)
+    API-->>U: 202 {export_id, status=pending}
+
+    Note over CELERY: 异步处理
+    CELERY->>DB: UPDATE status=processing
+    CELERY->>SVC: AgentExportService(db).export_session_pdf(session_id)
+    SVC->>MSG: SELECT * FROM agent_messages WHERE session_id=? ORDER BY created_at
+    MSG-->>SVC: [message1, message2, ...]
+    SVC->>SVC: reportlab SimpleDocTemplate 构建PDF
+    SVC-->>CELERY: pdf_bytes
+    CELERY->>MINIO: PUT exports/{tenant_id}/{export_id}.pdf
+    MINIO-->>CELERY: file_path
+    CELERY->>DB: UPDATE file_url, file_size, status=completed, completed_at, expired_at=now+30min
+
+    U->>API: GET /agents/exports/{id} (轮询)
+    API-->>U: 200 {status=completed}
+
+    U->>API: GET /agents/exports/{id}/download
+    API->>DB: 验证 user_id == export.user_id
+    API->>MINIO: presigned_get_url(file_path, expires=1800)
+    MINIO-->>API: https://minio.../exports/xxx.pdf?signature=...
+    API-->>U: 200 {download_url, expired_at}
+    U->>MINIO: GET download_url (直接下载)
+
+%% ============ 4. 模型健康检查流程 ============
+sequenceDiagram
+    participant BEAT as Celery Beat
+    participant WORKER as Celery Worker
+    participant ROUTER as LLMRouter
+    participant REDIS as Redis
+    participant LLM as LLM Provider
+
+    loop 每 60 秒
+        BEAT->>WORKER: health_check_task()
+        WORKER->>ROUTER: 获取所有 providers
+
+        loop 每个 provider
+            alt is_available == True
+                WORKER->>LLM: 轻量探测请求 (max_tokens=1)
+                LLM-->>WORKER: {content, usage}
+                WORKER->>ROUTER: _record_success(provider)
+                Note over ROUTER: 更新 avg_latency_ms, success_rate, last_check_time
+            else is_available == False
+                WORKER->>LLM: 探测请求 (max_tokens=1)
+                alt 探测成功
+                    LLM-->>WORKER: 200 OK
+                    WORKER->>ROUTER: 恢复 provider: is_available=True, failure_count=0
+                    Note over ROUTER: 故障恢复
+                else 探测失败
+                    LLM-->>WORKER: timeout/error
+                    Note over ROUTER: 保持 is_available=False
+                end
+            end
+        end
+
+        WORKER->>REDIS: HSET model:health:{provider} avg_latency_ms, success_rate, last_check_time
+    end

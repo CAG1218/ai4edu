@@ -23,3 +23,5 @@ from app.models.help import HelpArticle  # noqa: F401
 from app.models.permission import Role, Permission, RolePermission, UserRole  # noqa: F401
 from app.models.analytics import AnalyticsEvent  # noqa: F401
 from app.models.teacher_method import TeacherMethod, ClassroomRecord  # noqa: F401
+from app.models.usage import LLMUsageLog, TenantQuota  # noqa: F401
+from app.models.export import AgentExport  # noqa: F401

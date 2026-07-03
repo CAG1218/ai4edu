@@ -1,0 +1,268 @@
+%% AI 智能体中心 v2 — 类图
+%% 包含：数据模型、核心服务类、Provider 抽象层
+
+classDiagram
+    direction TB
+
+    %% ============ 数据模型 ============
+    class ClassroomRecord {
+        +Integer id
+        +String tenant_id
+        +String classroom_id
+        +String course_id
+        +String record_type
+        +String resource_id
+        +Text transcript
+        +JSON segments
+        +JSON knowledge_points
+        +String status
+        +String file_url
+        +String provider
+        +Text error_msg
+        +DateTime created_at
+        +DateTime updated_at
+        +to_dict() dict
+    }
+
+    class TeacherMethod {
+        +Integer id
+        +String tenant_id
+        +String teacher_id
+        +String course_id
+        +String classroom_id
+        +String title
+        +Text content
+        +String method_type
+        +JSON knowledge_points
+        +String source_resource_id
+        +String source_url
+        +String subject
+        +Boolean is_active
+        +String recommended_model
+        +DateTime created_at
+        +DateTime updated_at
+    }
+
+    class LLMUsageLog {
+        +Integer id
+        +String tenant_id
+        +String user_id
+        +String session_id
+        +String provider
+        +String model_name
+        +Integer input_tokens
+        +Integer output_tokens
+        +Integer total_tokens
+        +Integer latency_ms
+        +String status
+        +DateTime created_at
+        +to_dict() dict
+    }
+
+    class TenantQuota {
+        +Integer id
+        +String tenant_id
+        +Integer daily_token_limit
+        +Integer monthly_token_limit
+        +String strategy
+        +String sticky_model
+        +Boolean is_active
+        +DateTime created_at
+        +DateTime updated_at
+    }
+
+    class AgentExport {
+        +Integer id
+        +String session_id
+        +String tenant_id
+        +String user_id
+        +String format
+        +String status
+        +String file_url
+        +Integer file_size
+        +Text error_msg
+        +DateTime created_at
+        +DateTime completed_at
+        +DateTime expired_at
+        +to_dict() dict
+    }
+
+    class AgentSession {
+        +String id
+        +String tenant_id
+        +String user_id
+        +String agent_type
+        +String title
+        +JSON context
+        +DateTime created_at
+    }
+
+    class AgentMessage {
+        +Integer id
+        +String session_id
+        +String role
+        +Text content
+        +JSON metadata_json
+        +DateTime created_at
+    }
+
+    %% ============ LLM Router ============
+    class ModelProvider {
+        +String provider
+        +String api_key
+        +String api_base
+        +String model_name
+        +Boolean is_available
+        +Integer failure_count
+        +Float last_error_time
+        +Integer request_count
+        +Float window_start
+        +Float avg_latency_ms
+        +Float success_rate
+        +Float last_check_time
+    }
+
+    class LLMRouter {
+        -providers: dict
+        +_initialize() void
+        +get_model(scene, preferred_model, tenant_id, strategy) ModelProvider
+        +call_llm(messages, scene, preferred_model, tenant_id, session_id, user_id) str
+        +call_llm_stream(messages, scene, preferred_model) AsyncGenerator
+        +health_check() dict
+        +has_any_configured() bool
+        -_get_candidate_chain(scene, preferred_model) list
+        -_should_skip(provider) bool
+        -_record_failure(provider) void
+        -_record_success(provider) void
+        -_weighted_select(providers) ModelProvider
+        -_estimate_tokens(messages, result) int
+        +get_balancer_status() list~dict~
+    }
+
+    class QuotaManager {
+        -_redis: object
+        -_get_redis() object
+        +check_quota(tenant_id, estimated_tokens) tuple
+        +record_usage(tenant_id, tokens, provider, model_name, session_id, user_id, latency_ms, status) void
+        +get_usage(tenant_id) dict
+        +get_tenant_strategy(tenant_id, db) str
+    }
+
+    %% ============ OCR Provider 抽象 ============
+    class OCRResult {
+        +String text
+        +Float confidence
+        +String provider
+        +dict raw_response
+    }
+
+    class BaseOCRProvider {
+        <<abstract>>
+        +provider_name* str
+        +extract(image_url)* OCRResult
+    }
+
+    class AliyunOCRProvider {
+        +provider_name = "aliyun"
+        +extract(image_url) OCRResult
+    }
+
+    class TencentOCRProvider {
+        +provider_name = "tencent"
+        +extract(image_url) OCRResult
+    }
+
+    class MockOCRProvider {
+        +provider_name = "mock"
+        +extract(image_url) OCRResult
+    }
+
+    class OCRProviderFactory {
+        +PROVIDER_CHAIN: list~str~
+        +get_provider() BaseOCRProvider
+        -_create_provider(name) BaseOCRProvider
+    }
+
+    %% ============ ASR Provider 抽象 ============
+    class ASRResult {
+        +String transcript
+        +list~dict~ segments
+        +String provider
+        +Float duration_seconds
+    }
+
+    class BaseASRProvider {
+        <<abstract>>
+        +provider_name* str
+        +transcribe(audio_url)* ASRResult
+    }
+
+    class AliyunASRProvider {
+        +provider_name = "aliyun"
+        +transcribe(audio_url) ASRResult
+    }
+
+    class TencentASRProvider {
+        +provider_name = "tencent"
+        +transcribe(audio_url) ASRResult
+    }
+
+    class MockASRProvider {
+        +provider_name = "mock"
+        +transcribe(audio_url) ASRResult
+    }
+
+    class ASRProviderFactory {
+        +PROVIDER_CHAIN: list~str~
+        +get_provider() BaseASRProvider
+        -_create_provider(name) BaseASRProvider
+    }
+
+    %% ============ 导出服务 ============
+    class AgentExportService {
+        -db: AsyncSession
+        +export_session_markdown(session_id, tenant_id, user_id) str
+        +export_session_pdf(session_id, tenant_id, user_id) bytes
+        +upload_to_minio(content, filename, content_type) str
+        +generate_presigned_url(file_path, expires) str
+    }
+
+    %% ============ BaseAgent ============
+    class BaseAgent {
+        <<abstract>>
+        +system_prompt* str
+        +_build_messages(user_input, context) list
+        +execute(user_input, context) str
+        +stream_execute(user_input, context) AsyncGenerator
+        -_demo_reply(user_input) str
+        -_call_llm(messages, scene, preferred_model, tenant_id, session_id, user_id) str
+    }
+
+    %% ============ 关系 ============
+    LLMRouter "1" --> "*" ModelProvider : manages
+    LLMRouter "1" --> "1" QuotaManager : checks quota
+    BaseAgent "1" --> "1" LLMRouter : calls via _call_llm
+
+    BaseOCRProvider <|-- AliyunOCRProvider
+    BaseOCRProvider <|-- TencentOCRProvider
+    BaseOCRProvider <|-- MockOCRProvider
+    OCRProviderFactory --> BaseOCRProvider : creates
+    AliyunOCRProvider ..> OCRResult : returns
+    TencentOCRProvider ..> OCRResult : returns
+    MockOCRProvider ..> OCRResult : returns
+
+    BaseASRProvider <|-- AliyunASRProvider
+    BaseASRProvider <|-- TencentASRProvider
+    BaseASRProvider <|-- MockASRProvider
+    ASRProviderFactory --> BaseASRProvider : creates
+    AliyunASRProvider ..> ASRResult : returns
+    TencentASRProvider ..> ASRResult : returns
+    MockASRProvider ..> ASRResult : returns
+
+    AgentExportService --> AgentMessage : reads
+    AgentExportService ..> AgentExport : creates
+
+    ClassroomRecord "1" --> "0..1" TeacherMethod : source for
+    AgentSession "1" --> "*" AgentMessage : contains
+    AgentSession "1" --> "*" AgentExport : exports
+    LLMUsageLog --> TenantQuota : belongs to tenant

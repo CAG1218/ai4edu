@@ -17,6 +17,7 @@ from app.schemas.agent import (
     AgentTypeResponse,
     IntentResult,
     MessageCreate,
+    ModelBalancerResponse,
     ModelInfoResponse,
     ScenePresetResponse,
     SessionCreate,
@@ -717,6 +718,49 @@ async def get_session_context(
             },
             message="success",
         )
+
+
+@router.get("/models/balancer", summary="获取模型负载均衡状态")
+async def get_model_balancer_status(
+    current_user: User = Depends(get_current_user),
+) -> APIResponse:
+    """
+    获取模型负载均衡状态
+
+    返回各 Provider 的健康指标（avg_latency_ms, success_rate, failure_count），
+    当前负载均衡策略（latency/weighted/sticky），
+    以及推荐模型（sticky 策略下）。
+
+    用于管理员监控模型健康状态和负载分布。
+    """
+    from app.agents.llm_router import llm_router
+    from app.config import settings
+
+    await llm_router._initialize()
+
+    providers_status = llm_router.get_balancer_status()
+    current_strategy = settings.LLM_BALANCER_STRATEGY
+
+    # sticky 策略下返回推荐模型
+    recommended_model: Optional[str] = None
+    if current_strategy == "sticky":
+        # 找第一个可用的已配置 provider
+        for p in providers_status:
+            if p.get("is_available") and p.get("is_configured"):
+                recommended_model = p.get("model_name")
+                break
+
+    response = ModelBalancerResponse(
+        providers=providers_status,
+        current_strategy=current_strategy,
+        recommended_model=recommended_model,
+    )
+
+    return APIResponse(
+        code=0,
+        data=response.model_dump(),
+        message="success",
+    )
 
 
 def _get_agent_instance(agent_type: str):

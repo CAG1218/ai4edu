@@ -108,10 +108,15 @@ class BaseAgent(ABC):
         # 从 context 中提取场景类型（供 LLMRouter 使用）
         scene_type = context.get("scene_type") if context else None
         preferred = context.get("preferred_model") if context else None
+        # v2 新增：透传配额相关参数
+        tenant_id = context.get("tenant_id") if context else None
+        session_id = context.get("session_id") if context else None
+        user_id = context.get("user_id") if context else None
 
         try:
             result = await self._call_llm(
-                full_messages, scene_type=scene_type, preferred=preferred
+                full_messages, scene_type=scene_type, preferred=preferred,
+                tenant_id=tenant_id, session_id=session_id, user_id=user_id,
             )
             response_data = {
                 "content": result.get("content", ""),
@@ -350,11 +355,14 @@ class BaseAgent(ABC):
         max_tokens: int = 2048,
         scene_type: Optional[str] = None,
         preferred: Optional[str] = None,
+        tenant_id: Optional[int] = None,
+        session_id: Optional[int] = None,
+        user_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         通过 LLMRouter 调用 LLM（支持多模型路由与自动 fallback）
 
-        如果没有任何已配置的 API Key，降级为 _demo_reply() 规则引擎。
+        v2 改造: 透传 tenant_id/session_id/user_id 用于配额计量
 
         Args:
             messages: 消息列表（含系统提示词）
@@ -362,6 +370,9 @@ class BaseAgent(ABC):
             max_tokens: 最大生成token数
             scene_type: 场景类型（供 LLMRouter 选择偏好模型）
             preferred: 首选 provider 名称
+            tenant_id: 租户ID（用于配额检查）
+            session_id: 会话ID
+            user_id: 用户ID
 
         Returns:
             LLM响应结果 {content, model, usage, degraded, fallback_info}
@@ -380,12 +391,15 @@ class BaseAgent(ABC):
                 "fallback_info": None,
             }
 
-        # 通过 LLMRouter 调用（内部自动 fallback）
+        # 通过 LLMRouter 调用（内部自动 fallback + 配额检查）
         result = await llm_router.call_llm(
             messages,
             scene_type=scene_type,
             preferred=preferred,
             temperature=temperature,
             max_tokens=max_tokens,
+            tenant_id=tenant_id,
+            session_id=session_id,
+            user_id=user_id,
         )
         return result

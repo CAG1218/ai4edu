@@ -33,6 +33,10 @@ class ModelProvider:
     last_error_msg: str = ""
     request_count: int = 0  # 当前窗口请求计数
     window_start: float = field(default_factory=time.time)  # 速率限制窗口起始时间
+    # v2 新增：健康指标字段
+    avg_latency_ms: float = 0.0       # 平均延迟（毫秒）
+    success_rate: float = 1.0         # 成功率（0.0 ~ 1.0）
+    last_check_time: float = 0.0      # 最近健康检查时间（timestamp）
 
     @property
     def is_configured(self) -> bool:
@@ -158,8 +162,13 @@ class LLMRouter:
         preferred: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 2048,
+        tenant_id: Optional[int] = None,
+        session_id: Optional[int] = None,
+        user_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """调用 LLM，自动 fallback
+
+        v2 改造: 调用前检查配额，调用后记录用量
 
         Args:
             messages: 消息列表（含系统提示词）
@@ -167,12 +176,41 @@ class LLMRouter:
             preferred: 首选 provider
             temperature: 生成温度
             max_tokens: 最大生成 token 数
+            tenant_id: 租户ID（用于配额检查）
+            session_id: 会话ID
+            user_id: 用户ID
 
         Returns:
             包含 content, model, usage, fallback_info 的字典。
             若所有 Provider 不可用，返回降级标记。
         """
         await self._initialize()
+
+        # v2 新增：配额检查
+        if tenant_id:
+            try:
+                from app.services.quota_manager import quota_manager
+
+                allowed, reason = await quota_manager.check_quota(
+                    tenant_id, estimated_tokens=1000
+                )
+                if not allowed:
+                    logger.warning("租户 %s 配额超限: %s", tenant_id, reason)
+                    await quota_manager.record_usage(
+                        tenant_id, 0, provider="none", model_name="none",
+                        session_id=session_id, user_id=user_id,
+                        status="quota_exceeded",
+                    )
+                    return {
+                        "content": "⚠️ 今日 AI 额度已用完，请明天再试或联系管理员。",
+                        "model": "quota-exceeded",
+                        "usage": {},
+                        "degraded": True,
+                        "fallback_info": None,
+                        "quota_exceeded": True,
+                    }
+            except Exception as e:
+                logger.warning("配额检查异常（放行）: %s", e)
 
         # 获取候选 provider 链
         candidates = self._get_candidate_chain(scene_type, preferred)
@@ -191,6 +229,8 @@ class LLMRouter:
         fallback_from: Optional[str] = None
         fallback_reason: Optional[str] = None
 
+        start_time = time.time()
+
         for i, provider in enumerate(candidates):
             if self._should_skip(provider):
                 continue
@@ -206,6 +246,11 @@ class LLMRouter:
                     )
                     self._record_success(provider)
 
+                    latency_ms = int((time.time() - start_time) * 1000)
+
+                    # v2 新增：更新健康指标
+                    self._update_health_metrics(provider, latency_ms, success=True)
+
                     # 如果发生了 fallback，记录信息
                     fallback_info = None
                     if fallback_from:
@@ -214,6 +259,29 @@ class LLMRouter:
                             "to": provider.provider,
                             "reason": fallback_reason or "unknown",
                         }
+
+                    # v2 新增：记录用量
+                    if tenant_id:
+                        try:
+                            from app.services.quota_manager import quota_manager
+
+                            usage = result.get("usage", {})
+                            actual_tokens = usage.get("total_tokens", 0) or self._estimate_tokens(
+                                messages, result.get("content", "")
+                            )
+                            await quota_manager.record_usage(
+                                tenant_id, actual_tokens,
+                                provider=provider.provider,
+                                model_name=provider.model_name,
+                                session_id=session_id,
+                                user_id=user_id,
+                                input_tokens=usage.get("prompt_tokens", 0),
+                                output_tokens=usage.get("completion_tokens", 0),
+                                latency_ms=latency_ms,
+                                status="success",
+                            )
+                        except Exception as quota_err:
+                            logger.warning("用量记录失败: %s", quota_err)
 
                     return {
                         "content": result["content"],
@@ -226,6 +294,10 @@ class LLMRouter:
                     attempts += 1
                     error_msg = str(e)
                     self._record_failure(provider, error_msg)
+
+                    # v2 新增：更新健康指标
+                    self._update_health_metrics(provider, 0, success=False)
+
                     logger.warning(
                         "Provider %s 调用失败 (第%d次): %s",
                         provider.provider,
@@ -581,6 +653,102 @@ class LLMRouter:
         if "connection" in error_lower or "network" in error_lower:
             return "network_error"
         return "unknown"
+
+    # ============ v2 新增方法 ============
+
+    def _update_health_metrics(
+        self, provider: ModelProvider, latency_ms: int, success: bool
+    ) -> None:
+        """更新 Provider 健康指标（调用成功/失败后触发）
+
+        使用滑动平均更新 avg_latency_ms 和 success_rate
+
+        Args:
+            provider: Provider 实例
+            latency_ms: 本次调用延迟
+            success: 是否成功
+        """
+        # 更新延迟（指数移动平均，alpha=0.3）
+        if success and latency_ms > 0:
+            if provider.avg_latency_ms == 0:
+                provider.avg_latency_ms = float(latency_ms)
+            else:
+                provider.avg_latency_ms = 0.7 * provider.avg_latency_ms + 0.3 * float(latency_ms)
+
+        # 更新成功率（指数移动平均）
+        success_val = 1.0 if success else 0.0
+        provider.success_rate = 0.9 * provider.success_rate + 0.1 * success_val
+
+        # 更新最近检查时间
+        provider.last_check_time = time.time()
+
+    def _weighted_select(self, providers: List[ModelProvider]) -> ModelProvider:
+        """按 success_rate 加权随机选择
+
+        Args:
+            providers: 可用 provider 列表
+
+        Returns:
+            选中的 provider
+        """
+        import random
+
+        weights = [max(p.success_rate, 0.01) for p in providers]
+        total = sum(weights)
+        if total == 0:
+            return providers[0]
+
+        # 加权随机
+        r = random.uniform(0, total)
+        cumulative = 0.0
+        for provider, weight in zip(providers, weights):
+            cumulative += weight
+            if r <= cumulative:
+                return provider
+
+        return providers[-1]
+
+    def _estimate_tokens(self, messages: List[Dict[str, str]], result: str) -> int:
+        """粗略估算 token 数（中文 ~1.5 token/字，英文 ~0.75 token/word）
+
+        Args:
+            messages: 消息列表
+            result: LLM 回复内容
+
+        Returns:
+            估算的 token 总数
+        """
+        input_text = " ".join(m.get("content", "") for m in messages)
+        input_tokens = int(len(input_text) * 1.5)
+        output_tokens = int(len(result) * 1.5)
+        return input_tokens + output_tokens
+
+    def get_balancer_status(self) -> List[Dict[str, Any]]:
+        """返回所有 provider 的健康状态摘要
+
+        Returns:
+            [{"provider": "deepseek", "model_name": "deepseek-chat",
+              "is_available": True, "avg_latency_ms": 1200,
+              "success_rate": 0.98, "failure_count": 0, "last_check_time": ...}]
+        """
+        status_list: List[Dict[str, Any]] = []
+        for provider_name in self._priority:
+            provider = self._providers.get(provider_name)
+            if not provider:
+                continue
+
+            status_list.append({
+                "provider": provider.provider,
+                "model_name": provider.model_name,
+                "is_available": provider.is_available,
+                "is_configured": provider.is_configured,
+                "avg_latency_ms": round(provider.avg_latency_ms, 1),
+                "success_rate": round(provider.success_rate, 4),
+                "failure_count": provider.failure_count,
+                "last_check_time": provider.last_check_time,
+            })
+
+        return status_list
 
 
 # 全局单例

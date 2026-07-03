@@ -64,6 +64,16 @@
           <span :class="['agent-chat__model-dot', modelDotClass]"></span>
           <span class="agent-chat__model-name">{{ currentModelName }}</span>
         </div>
+        <!-- 导出按钮 -->
+        <el-button
+          type="primary"
+          plain
+          size="small"
+          :icon="Download"
+          @click="exportDialogVisible = true"
+        >
+          导出
+        </el-button>
       </div>
 
       <!-- 消息列表 -->
@@ -141,6 +151,9 @@
         </el-button>
       </div>
     </div>
+
+    <!-- 导出对话框 -->
+    <ExportDialog v-model="exportDialogVisible" />
   </div>
 </template>
 
@@ -151,11 +164,12 @@
  */
 import { ref, onMounted, nextTick, watch, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Promotion, Plus, Delete, ChatDotRound } from '@element-plus/icons-vue'
+import { Promotion, Plus, Delete, ChatDotRound, Download } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { useAgentStore } from '@/stores/agent'
 import CitationList from './components/CitationList.vue'
 import ContextBadges from './components/ContextBadges.vue'
+import ExportDialog from '@/components/agent/ExportDialog.vue'
 import type { Citation, ContextSummary } from '@/services/agent'
 
 const agentStore = useAgentStore()
@@ -164,6 +178,7 @@ const route = useRoute()
 const inputMessage = ref<string>('')
 const selectedAgentType = ref<string>('general')
 const messageContainerRef = ref<HTMLElement | null>(null)
+const exportDialogVisible = ref<boolean>(false)
 
 /** 当前场景名称 */
 const currentSceneName = computed<string>(() => {

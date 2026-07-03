@@ -22,6 +22,9 @@ from app.api.v1.help import router as help_router
 from app.api.v1.governance import router as governance_router
 from app.api.v1.telemetry import router as telemetry_router
 from app.api.v1.dashboard import router as dashboard_router
+from app.api.v1.classroom import router as classroom_router
+from app.api.v1.quota import router as quota_router
+from app.api.v1.export import router as export_router
 
 # v1 总路由
 api_v1_router = APIRouter()
@@ -45,3 +48,8 @@ api_v1_router.include_router(help_router, prefix="/help", tags=["帮助中心"])
 api_v1_router.include_router(governance_router, prefix="/governance", tags=["数据治理"])
 api_v1_router.include_router(telemetry_router, tags=["遥测"])
 api_v1_router.include_router(dashboard_router, tags=["仪表盘"])
+
+# v2 新增路由
+api_v1_router.include_router(classroom_router, prefix="/agents/classroom-records", tags=["课堂记录"])
+api_v1_router.include_router(quota_router, prefix="/admin/quotas", tags=["配额管理"])
+api_v1_router.include_router(export_router, prefix="/agents", tags=["对话导出"])

@@ -129,6 +129,39 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
 
+    # ============ v2 新增：Celery beat 配置 ============
+    CELERY_BEAT_HEALTH_CHECK_INTERVAL: int = 60  # 模型健康检查间隔（秒）
+
+    # ============ v2 新增：OCR/ASR 配置 ============
+    ALIYUN_OCR_API_KEY: str = ""
+    ALIYUN_OCR_ENDPOINT: str = "https://ocr-api.cn-hangzhou.aliyuncs.com"
+    ALIYUN_ASR_APP_KEY: str = ""
+    ALIYUN_ASR_ENDPOINT: str = "https://nls-meta.cn-shanghai.aliyuncs.com"
+    TENCENT_OCR_SECRET_ID: str = ""
+    TENCENT_OCR_SECRET_KEY: str = ""
+    TENCENT_OCR_REGION: str = "ap-guangzhou"
+    TENCENT_ASR_SECRET_ID: str = ""
+    TENCENT_ASR_SECRET_KEY: str = ""
+    TENCENT_ASR_REGION: str = "ap-guangzhou"
+    OCR_PROVIDER_PRIORITY: str = "aliyun,tencent,mock"  # 逗号分隔
+
+    # ============ v2 新增：负载均衡配置 ============
+    LLM_BALANCER_STRATEGY: str = "latency"  # latency / weighted / sticky
+    LLM_STICKY_DEFAULT: bool = False  # sticky 默认关闭
+    LLM_HEALTH_CHECK_TIMEOUT: int = 10  # 健康检查超时秒数
+
+    # ============ v2 新增：导出配置 ============
+    EXPORT_MINIO_BUCKET: str = "ai4edu-exports"
+    EXPORT_PRESIGN_EXPIRE: int = 1800  # 预签名 URL 有效期秒数（30min）
+    EXPORT_MAX_FILE_SIZE: int = 104857600  # 上传文件最大 100MB
+
+    # ============ v2 新增：配额配置 ============
+    QUOTA_DEFAULT_DAILY_TOKENS: int = 500000
+    QUOTA_DEFAULT_MONTHLY_TOKENS: int = 10000000
+    QUOTA_REDIS_KEY_PREFIX: str = "quota"
+    QUOTA_DAILY_TTL: int = 90000       # 25h in seconds
+    QUOTA_MONTHLY_TTL: int = 3024000   # 35d in seconds
+
     # OpenTelemetry
     OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://localhost:4317"
     OTEL_SERVICE_NAME: str = "ai4edu-backend"
