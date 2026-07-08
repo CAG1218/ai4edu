@@ -26,7 +26,6 @@ export interface RegisterParams {
   password: string
   nickname: string
   role?: string
-  invite_code?: string
   school?: string
   grade?: string
 }

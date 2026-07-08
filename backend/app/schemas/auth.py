@@ -35,7 +35,7 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=6, max_length=50, description="密码")
     nickname: str = Field(..., min_length=2, max_length=50, description="昵称")
     role: str = Field(default="student", pattern="^(student|teacher)$", description="角色")
-    invite_code: Optional[str] = Field(default=None, description="邀请码")
+    invite_code: Optional[str] = Field(default=None, description="邀请码（已废弃，不再使用）", deprecated=True)
     school: Optional[str] = Field(default=None, description="学校")
     grade: Optional[str] = Field(default=None, description="年级")
 

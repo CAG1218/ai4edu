@@ -104,14 +104,6 @@ class AuthService:
         if existing.scalars().first():
             raise ValidationException(message="该邮箱已注册")
 
-        # 验证角色：教师需要邀请码
-        if request.role == "teacher" and not request.invite_code:
-            raise ValidationException(message="教师注册需要邀请码")
-
-        # 验证邀请码（简单实现，生产环境应查数据库）
-        if request.invite_code and request.invite_code != settings.SECRET_KEY[:8]:
-            raise ValidationException(message="邀请码无效")
-
         # 创建用户
         user = User(
             email=request.email,

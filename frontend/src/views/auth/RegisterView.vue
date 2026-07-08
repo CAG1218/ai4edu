@@ -63,15 +63,6 @@
           </el-radio-group>
         </el-form-item>
 
-        <!-- 教师邀请码 -->
-        <el-form-item v-if="registerForm.role === 'teacher'" label="邀请码" prop="invite_code">
-          <el-input
-            v-model="registerForm.invite_code"
-            placeholder="请输入教师邀请码"
-            prefix-icon="Ticket"
-          />
-        </el-form-item>
-
         <el-form-item label="学校（选填）" prop="school">
           <el-input
             v-model="registerForm.school"
@@ -109,7 +100,7 @@
 <script setup lang="ts">
 /**
  * AI4Edu 注册页
- * 表单验证 + 角色选择 + 教师邀请码
+ * 表单验证 + 角色选择
  */
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
@@ -135,7 +126,6 @@ const registerForm = reactive({
   password: '',
   confirmPassword: '',
   role: 'student',
-  invite_code: '',
   school: '',
   grade: '',
 })
@@ -169,9 +159,6 @@ const registerRules: FormRules = {
   role: [
     { required: true, message: '请选择角色', trigger: 'change' },
   ],
-  invite_code: [
-    { required: true, message: '教师注册需要邀请码', trigger: 'blur' },
-  ],
 }
 
 async function handleRegister(): Promise<void> {
@@ -187,7 +174,6 @@ async function handleRegister(): Promise<void> {
         password: registerForm.password,
         nickname: registerForm.nickname,
         role: registerForm.role,
-        invite_code: registerForm.invite_code || undefined,
         school: registerForm.school || undefined,
         grade: registerForm.grade || undefined,
       })
