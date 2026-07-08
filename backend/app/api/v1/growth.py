@@ -29,7 +29,7 @@ router = APIRouter()
 @router.post("/evaluations", summary="创建学生评价")
 async def create_evaluation(
     data: EvaluationCreate,
-    current_user: User = Depends(require_role(["teacher", "admin"])),
+    current_user: User = Depends(require_role(["teacher", "admin", "super_admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse[EvaluationResponse]:
     """教师/管理员创建学生评价"""
@@ -48,7 +48,7 @@ async def list_evaluations(
     course_id: Optional[int] = Query(None, description="课程ID筛选"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
-    current_user: User = Depends(require_role(["teacher", "admin"])),
+    current_user: User = Depends(require_role(["teacher", "admin", "super_admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse[PaginatedResponse[EvaluationResponse]]:
     """教师/管理员获取学生评价列表"""
@@ -88,7 +88,7 @@ async def get_evaluation(
 async def update_evaluation(
     evaluation_id: int,
     data: EvaluationUpdate,
-    current_user: User = Depends(require_role(["teacher", "admin"])),
+    current_user: User = Depends(require_role(["teacher", "admin", "super_admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse[EvaluationResponse]:
     """更新评价（仅限评价作者）"""
@@ -109,7 +109,7 @@ async def update_evaluation(
 @router.delete("/evaluations/{evaluation_id}", summary="删除评价")
 async def delete_evaluation(
     evaluation_id: int,
-    current_user: User = Depends(require_role(["teacher", "admin"])),
+    current_user: User = Depends(require_role(["teacher", "admin", "super_admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse[None]:
     """删除评价（仅限评价作者）"""
