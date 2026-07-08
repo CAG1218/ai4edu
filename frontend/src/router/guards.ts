@@ -96,6 +96,11 @@ export function setupGuards(router: Router): void {
     // 检查角色权限
     const allowedRoles = to.meta.allowedRoles as string[] | undefined
     if (allowedRoles && authStore.user) {
+      // super_admin 拥有所有角色权限
+      if (authStore.user.role === 'super_admin') {
+        next()
+        return
+      }
       if (!allowedRoles.includes(authStore.user.role)) {
         next({ path: '/' })
         return

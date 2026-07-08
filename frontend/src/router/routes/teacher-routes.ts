@@ -11,7 +11,7 @@ export const teacherRoutes: RouteRecordRaw[] = [
     component: AppLayout,
     meta: {
       requiresAuth: true,
-      roles: ['teacher', 'admin'],
+      allowedRoles: ['teacher', 'admin'],
     },
     children: [
       {
@@ -84,7 +84,7 @@ export const teacherRoutes: RouteRecordRaw[] = [
         meta: {
           title: '学生成长档案',
           requiresAuth: true,
-          roles: ['teacher', 'admin'],
+          allowedRoles: ['teacher', 'admin'],
         },
       },
     ],

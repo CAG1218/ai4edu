@@ -11,7 +11,7 @@ export const adminRoutes: RouteRecordRaw[] = [
     component: AppLayout,
     meta: {
       requiresAuth: true,
-      roles: ['admin', 'super_admin'],
+      allowedRoles: ['admin', 'super_admin'],
     },
     children: [
       {
