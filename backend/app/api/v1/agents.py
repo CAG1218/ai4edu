@@ -517,13 +517,13 @@ async def websocket_chat(websocket: WebSocket, session_id: int):
             agent_type_str = intent_router.get_agent_type(detected_intent)
             agent = _get_agent_instance(agent_type_str)
 
-            # 查询会话信息
+            # 查询会话信息并保存用户消息
             from sqlalchemy import select as sa_select
-            from app.database import async_session_maker
+            from app.database import async_session_factory
 
             session_info: Dict[str, Any] = {}
             try:
-                async with async_session_maker() as db:
+                async with async_session_factory() as db:
                     stmt = sa_select(AgentSession).where(AgentSession.id == session_id)
                     result = await db.execute(stmt)
                     session = result.scalars().first()
@@ -533,9 +533,20 @@ async def websocket_chat(websocket: WebSocket, session_id: int):
                             "tenant_id": session.tenant_id,
                             "course_id": session.course_id,
                             "scene_type": session.scene_type,
+                            "model_name": session.model_name,
                         }
+                        # 保存用户消息到 agent_messages 表
+                        user_msg = AgentMessage(
+                            session_id=session_id,
+                            role="user",
+                            content=content,
+                            content_type="text",
+                        )
+                        db.add(user_msg)
+                        await db.flush()
+                        await db.commit()
             except Exception as e:
-                logger.warning("WebSocket 查询会话失败: %s", e)
+                logger.warning("WebSocket 查询会话/保存用户消息失败: %s", e)
 
             # 构建资源上下文
             citations: List[Dict[str, Any]] = []
@@ -544,7 +555,7 @@ async def websocket_chat(websocket: WebSocket, session_id: int):
                 try:
                     from app.agents.resource_context import resource_context_builder
 
-                    async with async_session_maker() as ctx_db:
+                    async with async_session_factory() as ctx_db:
                         context_result = await resource_context_builder.build(
                             db=ctx_db,
                             user_id=session_info["user_id"],
@@ -578,16 +589,57 @@ async def websocket_chat(websocket: WebSocket, session_id: int):
                 "context_summary": context_summary,
             }
 
-            # 流式输出
+            # 流式输出（同时累积完整回复内容用于持久化）
+            streaming_parts: List[str] = []
             async for chunk in agent.stream_execute(
                 messages=[{"role": "user", "content": content}],
                 context=agent_context,
             ):
+                streaming_parts.append(chunk)
                 await websocket.send_json({
                     "type": "chunk",
                     "content": chunk,
                     "agent_type": agent_type_str,
                 })
+            streaming_content = "".join(streaming_parts)
+
+            # 保存 AI 回复并更新会话统计信息
+            model_used = session_info.get("model_name", "")
+            metadata = {
+                "citations": citations,
+                "context_summary": context_summary,
+                "model_used": model_used,
+                "model_fallback": False,
+            }
+            try:
+                async with async_session_factory() as db:
+                    stmt = sa_select(AgentSession).where(AgentSession.id == session_id)
+                    result = await db.execute(stmt)
+                    session_obj = result.scalars().first()
+                    if session_obj:
+                        # 保存 assistant 消息
+                        ai_msg = AgentMessage(
+                            session_id=session_id,
+                            role="assistant",
+                            content=streaming_content,
+                            content_type="markdown",
+                            model_name=model_used,
+                            metadata_json=json.dumps(metadata, ensure_ascii=False),
+                        )
+                        db.add(ai_msg)
+
+                        # 更新会话统计信息
+                        session_obj.message_count += 2
+                        session_obj.last_message_at = datetime.datetime.utcnow()
+                        # 流式模式无精确 usage，按字符数粗略估算 token
+                        estimated_input = int(len(content) * 1.5)
+                        estimated_output = int(len(streaming_content) * 1.5)
+                        session_obj.total_tokens += estimated_input + estimated_output
+
+                        await db.flush()
+                        await db.commit()
+            except Exception as e:
+                logger.error("WebSocket 保存 AI 回复失败: %s", e)
 
             # done 消息携带 citations 和模型信息
             await websocket.send_json({
@@ -595,6 +647,7 @@ async def websocket_chat(websocket: WebSocket, session_id: int):
                 "agent_type": agent_type_str,
                 "citations": citations,
                 "context_summary": context_summary,
+                "model_used": model_used,
             })
     except Exception as e:
         logger.error("WebSocket 异常: %s", e)

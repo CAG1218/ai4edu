@@ -162,6 +162,16 @@ export const sceneRoutes: RouteRecordRaw[] = [
           requiresAuth: false,
         },
       },
+      {
+        path: 'growth-profile',
+        name: 'GrowthProfile',
+        component: () => import('@/views/growth/GrowthProfileView.vue'),
+        meta: {
+          title: '成长档案',
+          requiresAuth: true,
+          allowedRoles: ['student', 'teacher', 'admin'],
+        },
+      },
     ],
   },
 ]

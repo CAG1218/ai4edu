@@ -83,12 +83,15 @@ QA（严过关）→ 测试验证（179 passed）
 ```
 
 ## 用户下一步建议
-1. ~~**运行 Alembic 迁移**~~：✅ 已完成（3 新表 + 2 表加字段）
-2. ~~**安装新依赖**~~：✅ 已完成（reportlab + celery[redis]）
-3. ~~**启动 Celery worker**~~：✅ 已完成（Docker 容器 ai4edu-celery-worker）
-4. ~~**启动 Celery beat**~~：✅ 已完成（Docker 容器 ai4edu-celery-beat，每 60s 健康检查）
-5. ~~**重建后端 Docker 容器**~~：✅ 已完成（9 容器全部运行新镜像，v2 API 已上线）
-6. **配置 OCR/ASR API Key**（可选）：设置 ALIYUN_OCR_API_KEY / TENCENT_OCR_SECRET_ID 等环境变量，无配置时自动降级为 mock
+1. ~~**运行 Alembic 迁移**~~：✅ 已完成（本地 + 云端）
+2. ~~**安装新依赖**~~：✅ 已完成
+3. ~~**启动 Celery worker/beat**~~：✅ 已完成（本地进程 + Docker 容器）
+4. ~~**重建后端 Docker 容器**~~：✅ 已完成（本地 + 阿里云 ECS）
+5. **配置 OCR/ASR API Key**（可选）：设置 ALIYUN_OCR_API_KEY / TENCENT_OCR_SECRET_ID 等环境变量，无配置时自动降级为 mock
+6. **访问云端服务**：
+   - 前端：http://121.43.129.181
+   - 后端 Swagger：http://121.43.129.181:8000/docs
+7. **安全建议**：生产环境请修改默认密码、关闭 8000 端口公网访问或配置 HTTPS/鉴权
 
 ## 部署修复记录
 - `schemas/classroom.py`：合并旧+新 schema（v2 覆盖了旧 ClassroomCreate 等类）
@@ -98,6 +101,22 @@ QA（严过关）→ 测试验证（179 passed）
 - 提交：`a521d1c`
 
 ## 当前运行状态
-- **9 个 Docker 容器**：backend + celery-worker + celery-beat + postgres + redis + neo4j + clickhouse + elasticsearch + minio
-- **Backend API**：http://localhost:8000（Swagger UI: /docs）
-- **11 个 v2 API 端点**：balancer / classroom-records / admin/quotas / agents/exports
+- **本地**：9 个 Docker 容器运行，Backend API http://localhost:8000，v2 API 已上线
+- **阿里云 ECS**：10 个 Docker 容器运行（9 后端 + 1 Nginx 前端）
+  - 前端网站：http://121.43.129.181 ✅ 已修复白屏（2026-07-04 重新构建 dist + 更新 Nginx 缓存头）
+  - 后端 API：http://121.43.129.181:8000/docs
+  - v2 API 端点已注册：/api/v1/agents/models/balancer、/api/v1/admin/quotas/status、/api/v1/admin/quotas/dashboard 等
+  - Alembic 版本：`c8e2a4f7b901 (head)`
+  - Celery 任务已注册：`process_board_ocr`, `process_video_asr`, `export_session_task`, `health_check_task`
+
+## 云端部署修复记录
+- `backend/Dockerfile`：添加阿里云镜像源（apt + PyPI）+ `ENV PYTHONPATH=/app`
+  - 原因：阿里云 ECS 访问 Debian 官方源极慢；容器内 `alembic`/`celery` 找不到 `app` 模块
+- `scripts/deploy_v2_cloud_full.py`：完整 Paramiko SFTP/SSH 部署脚本，含 Alembic `stamp + upgrade` 和验证
+- 修复 Celery 镜像未重建问题：显式 `docker compose build --no-cache celery-worker celery-beat` 后再重建容器
+- Alembic 云端迁移：`stamp 61a4199a88b0` → `upgrade head` → `c8e2a4f7b901`
+- **前端白屏修复（2026-07-04）**：
+  - 重新构建 `frontend/dist`（旧 dist 为 6 月 28 日，未包含 v2 视图）
+  - 修复 `frontend/tsconfig.json`：移除对 `tsconfig.sw.json` 的 project reference
+  - 修复 `frontend/vite.config.ts`：PWA 使用 `strategies: 'InjectManifest'` + `injectManifest: { swSrc, swDest }`
+  - 更新 `deploy/nginx/conf.d/default.http.conf`：为 `location /`、`/registerSW.js`、`/sw.js` 添加 no-cache 头，避免 Service Worker 缓存旧 `index.html`

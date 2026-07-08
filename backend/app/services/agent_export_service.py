@@ -513,6 +513,10 @@ class AgentExportService:
     def _get_presigned_url(self, file_key: str) -> str:
         """生成 MinIO 预签名下载 URL
 
+        使用 MINIO_PUBLIC_ENDPOINT（浏览器可访问地址）创建 MinIO client，
+        以保证返回给前端的预签名 URL 能被浏览器正常解析与访问。
+        若 MINIO_PUBLIC_ENDPOINT 未配置，则回退到 MINIO_ENDPOINT。
+
         Args:
             file_key: MinIO 存储 Key
 
@@ -522,7 +526,7 @@ class AgentExportService:
         from minio import Minio
 
         client = Minio(
-            settings.MINIO_ENDPOINT,
+            settings.MINIO_PUBLIC_ENDPOINT_OR_DEFAULT,
             access_key=settings.MINIO_ACCESS_KEY,
             secret_key=settings.MINIO_SECRET_KEY,
             secure=settings.MINIO_SECURE,

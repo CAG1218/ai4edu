@@ -77,6 +77,16 @@ export const teacherRoutes: RouteRecordRaw[] = [
           requiresAuth: true,
         },
       },
+      {
+        path: 'students/:studentId/growth-profile',
+        name: 'TeacherStudentGrowthProfile',
+        component: () => import('@/views/growth/GrowthProfileView.vue'),
+        meta: {
+          title: '学生成长档案',
+          requiresAuth: true,
+          roles: ['teacher', 'admin'],
+        },
+      },
     ],
   },
 ]
