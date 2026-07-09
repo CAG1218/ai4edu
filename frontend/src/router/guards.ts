@@ -7,7 +7,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useUserStore } from '@/stores/user'
 
 // Onboarding 相关路由名称
-const ONBOARDING_ROUTES = new Set(['onboarding-role', 'onboarding-interests', 'onboarding-goal'])
+const ONBOARDING_ROUTES = new Set(['onboarding-role', 'onboarding-major', 'onboarding-interests', 'onboarding-goal'])
 
 export function setupGuards(router: Router): void {
   /**

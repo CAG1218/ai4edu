@@ -84,6 +84,7 @@ class AuthService:
             role=user.role,
             avatar_url=user.avatar_url,
             onboarding_completed=user.onboarding_completed,
+            major=user.major,
         )
 
     async def register(self, request: RegisterRequest) -> RegisterResponse:
@@ -112,6 +113,7 @@ class AuthService:
             role=request.role,
             school=request.school,
             grade=request.grade,
+            major=request.major,
             default_scene="classroom",
             locale="zh-CN",
             onboarding_completed=False,
@@ -197,6 +199,7 @@ class AuthService:
             "role": user.role,
             "grade": user.grade,
             "school": user.school,
+            "major": user.major,
             "default_scene": user.default_scene,
             "locale": user.locale,
             "onboarding_completed": user.onboarding_completed,

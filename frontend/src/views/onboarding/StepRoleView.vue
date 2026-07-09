@@ -77,7 +77,7 @@ function selectRole(role: string): void {
 
 function handleNext(): void {
   if (!selectedRole.value) return
-  router.push({ name: 'onboarding-interests' })
+  router.push({ name: 'onboarding-major' })
 }
 </script>
 

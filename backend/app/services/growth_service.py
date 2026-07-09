@@ -508,7 +508,7 @@ class GrowthService:
                 .group_by(func.date(model.created_at))
             )
             result = await self.db.execute(stmt)
-            return {row.day: row.count for row in result}
+            return {str(row.day): row.count for row in result}
 
         source_maps = await asyncio.gather(
             *[query_source(*params) for params in sources]

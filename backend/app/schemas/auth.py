@@ -26,6 +26,7 @@ class LoginResponse(BaseModel):
     role: str = Field(..., description="角色")
     avatar_url: Optional[str] = Field(default=None, description="头像URL")
     onboarding_completed: bool = Field(default=False, description="是否完成引导")
+    major: Optional[str] = Field(default=None, description="专业")
 
 
 class RegisterRequest(BaseModel):
@@ -38,6 +39,7 @@ class RegisterRequest(BaseModel):
     invite_code: Optional[str] = Field(default=None, description="邀请码（已废弃，不再使用）", deprecated=True)
     school: Optional[str] = Field(default=None, description="学校")
     grade: Optional[str] = Field(default=None, description="年级")
+    major: Optional[str] = Field(default=None, min_length=0, max_length=100, description="专业")
 
 
 class RegisterResponse(BaseModel):
@@ -76,6 +78,7 @@ class UserInfoResponse(BaseModel):
     role: str = Field(..., description="角色")
     grade: Optional[str] = Field(default=None, description="年级")
     school: Optional[str] = Field(default=None, description="学校")
+    major: Optional[str] = Field(default=None, description="专业")
     default_scene: str = Field(..., description="默认场景")
     locale: str = Field(..., description="语言偏好")
     onboarding_completed: bool = Field(..., description="是否完成引导")

@@ -24,6 +24,7 @@ export interface UserPreferences {
 
 export interface OnboardingData {
   role: string
+  major: string
   interests: string[]
   goals: string[]
 }
@@ -57,7 +58,7 @@ export const useUserStore = defineStore('user', () => {
 
   /** Onboarding 收集的数据 */
   const onboardingData = ref<OnboardingData>({
-    ...{ role: '', interests: [], goals: [] },
+    ...{ role: '', major: '', interests: [], goals: [] },
     ...JSON.parse(localStorage.getItem('onboarding_data') || '{}'),
   })
 
@@ -96,7 +97,7 @@ export const useUserStore = defineStore('user', () => {
   function resetOnboarding(): void {
     onboardingCompleted.value = false
     onboardingStep.value = 0
-    onboardingData.value = { role: '', interests: [], goals: [] }
+    onboardingData.value = { role: '', major: '', interests: [], goals: [] }
     localStorage.removeItem('onboarding_completed')
     localStorage.removeItem('onboarding_data')
   }

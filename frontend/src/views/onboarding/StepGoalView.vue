@@ -125,6 +125,7 @@ async function handleComplete(): Promise<void> {
     if (userId) {
       await authApi.completeOnboarding(userId, {
         role: userStore.onboardingData.role || '',
+        major: userStore.onboardingData.major || '',
         interests: userStore.onboardingData.interests || [],
         goals: selectedGoals.value,
       })

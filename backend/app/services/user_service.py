@@ -218,6 +218,7 @@ class UserService:
         user.role = request.role
         user.grade = request.grade
         user.school = request.school
+        user.major = request.major
         user.onboarding_completed = True
 
         # 保存兴趣和目标到偏好
@@ -309,6 +310,7 @@ class UserService:
             phone=user.phone,
             grade=user.grade,
             school=user.school,
+            major=user.major,
             bio=user.bio,
             default_scene=user.default_scene,
             locale=user.locale,

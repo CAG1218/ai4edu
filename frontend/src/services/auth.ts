@@ -111,7 +111,7 @@ export const authApi = {
    */
   async completeOnboarding(
     userId: number,
-    data: { role: string; interests: string[]; goals: string[] },
+    data: { role: string; major: string; interests: string[]; goals: string[] },
   ): Promise<void> {
     await api.post(`/users/${userId}/onboarding`, data)
   },

@@ -17,6 +17,7 @@ class UserCreate(BaseModel):
     phone: Optional[str] = Field(default=None, description="手机号")
     grade: Optional[str] = Field(default=None, description="年级")
     school: Optional[str] = Field(default=None, description="学校")
+    major: Optional[str] = Field(default=None, max_length=100, description="专业")
 
 
 class UserUpdate(BaseModel):
@@ -27,6 +28,7 @@ class UserUpdate(BaseModel):
     phone: Optional[str] = Field(default=None, description="手机号")
     grade: Optional[str] = Field(default=None, description="年级")
     school: Optional[str] = Field(default=None, description="学校")
+    major: Optional[str] = Field(default=None, max_length=100, description="专业")
     bio: Optional[str] = Field(default=None, description="个人简介")
 
 
@@ -41,6 +43,7 @@ class UserResponse(BaseModel):
     phone: Optional[str] = Field(default=None, description="手机号")
     grade: Optional[str] = Field(default=None, description="年级")
     school: Optional[str] = Field(default=None, description="学校")
+    major: Optional[str] = Field(default=None, description="专业")
     bio: Optional[str] = Field(default=None, description="个人简介")
     default_scene: str = Field(..., description="默认场景")
     locale: str = Field(..., description="语言偏好")
@@ -64,6 +67,7 @@ class OnboardingRequest(BaseModel):
     """Onboarding 引导请求"""
 
     role: str = Field(..., description="选择的角色: student/teacher")
+    major: Optional[str] = Field(default=None, max_length=100, description="所在专业")
     interests: List[str] = Field(default_factory=list, min_length=0, description="兴趣学科（完整引导至少3个，跳过时可为空）")
     goals: List[str] = Field(default_factory=list, min_length=0, description="学习目标（跳过时可为空）")
     grade: Optional[str] = Field(default=None, description="年级")
