@@ -102,9 +102,7 @@ const featureMenus = computed(() => [
   { index: `/scene/${currentSceneType.value}/graphs`, icon: 'Connection', title: '知识图谱' },
   { index: `/scene/${currentSceneType.value}/notes`, icon: 'EditPen', title: '智能笔记' },
   { index: `/scene/${currentSceneType.value}/resources`, icon: 'Folder', title: '资源管理' },
-  { index: `/scene/${currentSceneType.value}/buddy`, icon: 'Sunny', title: 'AI 学伴' },
   { index: `/scene/${currentSceneType.value}/agent`, icon: 'ChatLineSquare', title: 'AI 智能体中心' },
-  { index: `/scene/${currentSceneType.value}/ai-chat`, icon: 'ChatDotRound', title: 'AI 对话' },
   { index: `/scene/${currentSceneType.value}/search`, icon: 'Search', title: '全局搜索' },
   { index: `/scene/${currentSceneType.value}/growth-profile`, icon: 'TrendCharts', title: '成长档案' },
 ])
