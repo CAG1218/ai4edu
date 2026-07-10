@@ -9,6 +9,12 @@
   --scene-primary-bg: #FFF3E0;
   --scene-primary-bg-hover: #FFE0B2;
 
+  // 新增：场景横幅渐变、辅助强调色、卡片圆角、警示边框
+  --scene-accent-color: #FFB74D;
+  --scene-banner-gradient: linear-gradient(135deg, #FFF3E0 0%, #FFE0B2 100%);
+  --scene-card-radius: 8px;
+  --scene-warning-border: 2px solid rgba(245, 124, 0, 0.3);
+
   // 侧边栏
   .sidebar {
     background: linear-gradient(180deg, #E65100 0%, #F57C00 100%);
@@ -26,5 +32,17 @@
 
   .accent-bg {
     background-color: var(--scene-exam-primary);
+  }
+}
+
+// 考前模式：倒计时数字闪烁动画
+@keyframes exam-countdown-blink {
+  0%, 100% {
+    opacity: 1;
+    text-shadow: 0 4px 12px rgba(245, 124, 0, 0.3);
+  }
+  50% {
+    opacity: 0.7;
+    text-shadow: 0 4px 20px rgba(245, 124, 0, 0.5);
   }
 }

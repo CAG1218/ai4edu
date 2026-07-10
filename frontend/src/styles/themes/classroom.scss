@@ -9,6 +9,11 @@
   --scene-primary-bg: #E3F2FD;
   --scene-primary-bg-hover: #BBDEFB;
 
+  // 新增：场景横幅渐变、辅助强调色、卡片圆角
+  --scene-accent-color: #64B5F6;
+  --scene-banner-gradient: linear-gradient(135deg, #E3F2FD 0%, #BBDEFB 100%);
+  --scene-card-radius: 10px;
+
   // 侧边栏
   .sidebar {
     background: linear-gradient(180deg, #1565C0 0%, #1976D2 100%);
@@ -26,5 +31,15 @@
 
   .accent-bg {
     background-color: var(--scene-classroom-primary);
+  }
+}
+
+// 课堂模式：进行中课程脉冲动画
+@keyframes classroom-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(103, 194, 58, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(103, 194, 58, 0);
   }
 }
