@@ -12,16 +12,14 @@ export default defineConfig({
       disabled: process.env.NODE_ENV === 'development',
       /** Service Worker 注册类型 */
       registerType: 'autoUpdate',
-      /** Workbox 构建配置 */
-      workbox: {
+      /** 自定义 SW 源文件路径（InjectManifest 模式） */
+      strategies: 'InjectManifest',
+      /** InjectManifest 构建配置 */
+      injectManifest: {
         /** 自定义 SW 源文件路径 */
         swSrc: resolve(__dirname, 'src/sw.ts'),
         /** 输出 SW 文件名 */
         swDest: resolve(__dirname, 'dist/sw.js'),
-        /** 不自动清理过期缓存（由 SW 自行管理） */
-        cleanupOutdatedCaches: true,
-        /** 跳过等待并立即激活 */
-        skipWaiting: true,
       },
       /** Web App Manifest 配置 */
       manifest: {

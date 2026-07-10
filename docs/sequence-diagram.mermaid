@@ -1,113 +1,57 @@
-%% AI 智能体中心 - 时序图
-%% 文件: docs/sequence-diagram.mermaid
-%% 描述: 用户提问 → AI 回答生成 全链路时序图
-
 sequenceDiagram
-    participant FE as Frontend<br/>(AgentChatView)
-    participant API as API Router<br/>(agents.py)
-    participant IR as IntentRouter
-    participant RCB as ResourceContextBuilder
-    participant DB as Database<br/>(PostgreSQL)
-    participant GS as GraphService<br/>(Neo4j)
-    participant Agent as Agent<br/>(RAGAgent/SubjectAgent)
-    participant LR as LLMRouter
-    participant LLM as LLM Provider<br/>(DeepSeek/Qwen/Hunyuan)
+    autonumber
+    participant U as 用户
+    participant SL as SceneLayout.vue
+    participant SS as useSceneStore
+    participant SA as sceneApi
+    participant R as Vue Router
+    participant DV as DashboardView.vue
+    participant SD as SceneDashboard<br/>(Classroom/SelfStudy/Exam/Discussion)
+    participant SWB as SceneWelcomeBanner
+    participant SC as 场景子组件
+    participant MD as scene-mock-data.ts
 
-    Note over FE,LLM: 用户提问 → AI 回答生成 全链路
+    Note over U,MD: 阶段一：场景切换触发
 
-    %% 1. 用户发送消息
-    FE->>API: POST /agents/sessions/{id}/messages<br/>{content: "老师，导数那道题怎么做？", content_type: "text"}
+    U->>SL: 点击场景切换下拉框<br/>选择"考前模式"
+    SL->>SS: switchScene(SceneType.EXAM)
+    SS->>SA: POST /scenes/switch {scene_type: 'exam'}
+    SA-->>SS: {scene_type, scene_name, primary_color, layout_config, feature_flags, widgets}
+    SS->>SS: 更新 currentSceneType = 'exam'
+    SS->>SS: 更新 currentSceneConfig
+    SS->>SS: localStorage.setItem('current_scene', 'exam')
+    SS->>SS: applySceneTheme('#F57C00')
+    Note right of SS: 设置 CSS 变量<br/>--scene-primary-color 等
 
-    %% 2. 查询会话
-    API->>DB: SELECT AgentSession WHERE id=:id AND user_id=:current_user.id
-    DB-->>API: session {scene_type: "review", course_id: 42, agent_type: "subject"}
+    SL->>R: router.push('/scene/exam/dashboard')
+    R-->>DV: 路由匹配，渲染 DashboardView
 
-    %% 3. 保存用户消息
-    API->>DB: INSERT AgentMessage (role="user", content="...")
-    DB-->>API: user_msg.id = 201
+    Note over U,MD: 阶段二：DashboardView 分发
 
-    %% 4. 意图路由
-    API->>IR: route("导数那道题怎么做？", context={scene_type: "review", current_agent_type: "subject"})
-    Note over IR: 场景上下文暗示 → 沿用 current_agent_type
-    IR-->>API: IntentType.SUBJECT → agent_type = "subject"
+    DV->>SS: 读取 currentSceneType
+    SS-->>DV: 'exam'
+    DV->>DV: dashboardComponent = computed(() => map['exam'] = ExamDashboard)
+    DV->>DV: <component :is={ExamDashboard} />
 
-    %% 5. 获取 Agent 实例
-    API->>API: _get_agent_instance("subject") → SubjectAgent()
+    Note over U,MD: 阶段三：场景仪表盘渲染
 
-    %% 6. 构建资源上下文（核心！）
-    API->>RCB: build(db, user_id, tenant_id, course_id=42, query="导数...", scene_type="review")
+    SD->>MD: import { examMockData } from mock/scene-mock-data
+    MD-->>SD: {countdown, reviewProgress, wrongBookStats, weakPoints, toolbarActions}
 
-    par 并行检索 4 类资源
-        Note over RCB,DB: 1. 检索用户笔记
-        RCB->>DB: SELECT Note WHERE owner_id=:user_id AND course_id=42 AND is_deleted=False<br/>ORDER BY updated_at DESC LIMIT 5
-        DB-->>RCB: notes[] (3条)
-    and
-        Note over RCB,DB: 2. 检索课程资源
-        RCB->>DB: SELECT Resource WHERE course_id=42 AND is_active=True LIMIT 5
-        DB-->>RCB: resources[] (2条)
-    and
-        Note over RCB,GS: 3. 检索知识图谱
-        RCB->>GS: search_nodes("导数", limit=3)
-        GS-->>RCB: graph_nodes[] (1条: 导数的几何意义)
-    and
-        Note over RCB,DB: 4. 检索老师方法
-        RCB->>DB: SELECT TeacherMethod WHERE course_id=42 AND is_active=True LIMIT 3
-        DB-->>RCB: teacher_methods[] (1条: 导数定义法解题步骤)
-    end
+    SD->>SWB: <SceneWelcomeBanner :config={SCENE_CONFIG['exam']} />
+    SWB->>SWB: 渲染场景名称 + slogan + description<br/>背景应用 accentColor 渐变
+    SWB-->>SD: 横幅渲染完成
 
-    RCB->>RCB: 组装 context_text<br/>【老师方法】导数定义法解题步骤...<br/>【我的笔记】导数基础概念...<br/>【课程资源】高二数学教材...<br/>【知识图谱】导数的几何意义...
-    RCB->>RCB: 构建 citations[] + summary{}
-    RCB-->>API: ContextResult {context_text, citations[3], summary{notes:3, resources:2, graph:1, methods:1}}
+    SD->>SC: 渲染 ExamCountdown / ReviewProgress / WrongBookSummary / WeakPointsTags
+    SC->>SC: 各组件消费 props 中的 mock 数据<br/>ReviewProgress 使用 vue-echarts 渲染环形图
+    SC-->>SD: 子组件渲染完成
 
-    %% 7. 调用 Agent
-    API->>Agent: execute(messages, context={..., db, resource_context: context_text})
+    SD-->>DV: 仪表盘渲染完成
+    DV-->>U: 用户看到考前模式专属仪表盘
 
-    Agent->>Agent: _build_messages()<br/>system_prompt + resource_context + 历史消息 + 用户问题
+    Note over U,MD: 阶段四：场景内交互
 
-    %% 8. LLM 调用与 fallback
-    Agent->>LR: call_llm(full_messages, scene_type="review")
-
-    LR->>LR: get_model(scene_type="review")<br/>→ 场景偏好 deepseek → 检查优先级链 [deepseek, qwen, hunyuan]
-    LR->>LR: _should_skip(deepseek)? → No (configured + available)
-
-    LR->>LLM: POST {deepseek_base}/chat/completions<br/>{model: "deepseek-chat", messages, temperature: 0.7}
-
-    alt 调用成功
-        LLM-->>LR: 200 OK {choices[0].message.content, usage}
-        LR->>LR: _record_success(deepseek)
-        LR-->>Agent: {content: "这道题用定义法...", model: "deepseek-chat", usage, fallback_info: null}
-    else 连续失败 < 2 次（重试）
-        LLM--x LR: 429 Rate Limited
-        LR->>LR: _record_failure(deepseek, "rate_limit")<br/>failure_count=1 < max_failures=2
-        LR->>LR: 重试 deepseek
-        LR->>LLM: POST /chat/completions (retry)
-        LLM--x LR: 500 Server Error
-        LR->>LR: _record_failure(deepseek, "server_error")<br/>failure_count=2 >= max_failures=2
-        LR->>LR: 标记 deepseek.is_available = False<br/>切换到下一个 Provider: qwen
-        LR->>LR: _should_skip(qwen)? → No
-        LR->>LLM: POST {qwen_base}/chat/completions<br/>{model: "qwen-plus", messages}
-        LLM-->>LR: 200 OK {content, usage}
-        LR->>LR: _record_success(qwen)
-        LR-->>Agent: {content: "...", model: "qwen-plus", usage,<br/>fallback_info: {from: "deepseek", to: "qwen", reason: "rate_limit"}}
-    else 所有 Provider 不可用
-        LR-->>Agent: 降级 → {content: "", model: "demo-rule-engine", degraded: True}
-        Agent->>Agent: _demo_reply(messages) → 规则引擎回复
-    end
-
-    Agent-->>API: {content: "这道题用我们上课讲的定义法来解...", model: "deepseek-chat",<br/>citations: [...], context_summary: {...}, fallback_info: null}
-
-    %% 9. 保存 AI 消息
-    API->>DB: INSERT AgentMessage<br/>(role="assistant", content="...", model_name="deepseek-chat",<br/>metadata_json={"citations": [...], "context_summary": {...}, "model_fallback": false})
-    DB-->>API: ai_msg.id = 202
-
-    API->>DB: UPDATE AgentSession<br/>SET message_count += 2, last_message_at = NOW(), total_tokens += usage.total_tokens
-    DB-->>API: OK
-
-    %% 10. 返回响应
-    API-->>FE: {code: 0, data: {<br/>  user_message: {id: 201, role: "user", content: "..."},<br/>  assistant_message: {id: 202, role: "assistant", content: "...", model_name: "deepseek-chat"},<br/>  citations: [{type: "teacher_method", title: "导数定义法解题步骤", source_url: "/resources/55", teacher_name: "陈老师"}, ...],<br/>  context_summary: {notes_count: 3, resources_count: 2, graph_nodes_count: 1, teacher_methods_count: 1},<br/>  model_used: "deepseek-chat",<br/>  model_fallback: false<br/>}}
-
-    %% 11. 前端渲染
-    FE->>FE: 渲染消息气泡 (marked → HTML)
-    FE->>FE: 渲染 CitationList 组件<br/>(3条引用: 老师方法📝 / 笔记📝 / 图谱节点🕸)
-    FE->>FE: 渲染 ContextBadges 组件<br/>(📎笔记(3) 📄资源(2) 🕸图谱(1) 👨‍🏫方法(1))
-    Note over FE: 用户可点击引用跳转到对应资源详情页
+    U->>SC: 点击"错题重练"按钮
+    SC->>R: emit('action', {route: '/diagnosis'})
+    R->>R: router.push('/scene/exam/diagnosis')
+    R-->>U: 跳转到学习诊断页

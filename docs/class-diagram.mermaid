@@ -1,213 +1,218 @@
-%% AI 智能体中心 - 类图
-%% 文件: docs/class-diagram.mermaid
-
 classDiagram
-    %% ========== 数据模型层 ==========
-    class TeacherMethod {
-        +int id
-        +int tenant_id
-        +int teacher_id
-        +Optional~int~ course_id
-        +Optional~int~ classroom_id
-        +str title
-        +str content
-        +str method_type
-        +Optional~str~ knowledge_points
-        +Optional~int~ source_resource_id
-        +Optional~str~ source_url
-        +str subject
-        +bool is_active
-        +datetime created_at
-        +datetime updated_at
+    %% ===== 枚举与配置 =====
+    class SceneType {
+        <<enum>>
+        CLASSROOM = 'classroom'
+        SELF_STUDY = 'self_study'
+        EXAM = 'exam'
+        DISCUSSION = 'discussion'
     }
 
-    class ClassroomRecord {
-        +int id
-        +int tenant_id
-        +int classroom_id
-        +int course_id
-        +str record_type
-        +Optional~int~ resource_id
-        +Optional~str~ transcript
-        +Optional~str~ segments
-        +Optional~str~ knowledge_points
-        +str status
-        +datetime created_at
+    class SceneConfigEntry {
+        +String name
+        +String nameEn
+        +String icon
+        +String color
+        +String slogan
+        +String description
+        +String illustration
+        +String accentColor
     }
 
-    %% ========== 核心引擎层 ==========
-    class ModelProvider {
-        +str provider
-        +str api_key
-        +str api_base
-        +str model_name
-        +bool is_available
-        +int failure_count
-        +Optional~datetime~ last_error_time
-        +str last_error_msg
-        +bool is_configured
+    class SCENE_CONFIG {
+        <<const Record~SceneType, SceneConfigEntry~>>
     }
 
-    class LLMRouter {
-        -Dict~str, ModelProvider~ _providers
-        -List~str~ _priority
-        -bool _initialized
-        +async _initialize() void
-        +async get_model(scene_type, preferred) Optional~ModelProvider~
-        +async call_llm(messages, scene_type, preferred, temperature, max_tokens) Dict
-        +async call_llm_stream(messages, scene_type, preferred, temperature, max_tokens) AsyncGenerator
-        +async health_check() List~Dict~
-        -_should_skip(provider) bool
-        -async _call_provider(provider, messages, temperature, max_tokens) Dict
-        -async _call_provider_stream(provider, messages, temperature, max_tokens) AsyncGenerator
-        -_record_failure(provider, error) void
-        -_record_success(provider) void
-        +has_any_configured() bool
+    %% ===== Mock 数据接口 =====
+    class CourseScheduleItem {
+        +String id
+        +String name
+        +String startTime
+        +String endTime
+        +String location
+        +CourseStatus status
+        +String teacher
     }
 
-    class Citation {
-        +str type
-        +str title
-        +str source_url
-        +Optional~str~ teacher_name
+    class CourseStatus {
+        <<enum>>
+        ONGOING = 'ongoing'
+        ENDED = 'ended'
+        UPCOMING = 'upcoming'
     }
 
-    class ContextResult {
-        +str context_text
-        +List~Citation~ citations
-        +Dict~str, int~ summary
+    class StudyTask {
+        +String id
+        +String title
+        +Boolean completed
+        +String subject
+        +String priority
     }
 
-    class ResourceContextBuilder {
-        +async build(db, user_id, tenant_id, course_id, query, scene_type) ContextResult
-        -async _search_notes(db, user_id, tenant_id, course_id, query, limit) List
-        -async _search_resources(db, tenant_id, course_id, query, limit) List
-        -async _search_graph_nodes(query, limit) List
-        -async _search_teacher_methods(db, tenant_id, course_id, query, limit) List
-        -_build_context_text(notes, resources, graph_nodes, teacher_methods) str
-        -_build_citations(notes, resources, graph_nodes, teacher_methods) List~Citation~
+    class FlashcardStats {
+        +Number pendingReview
+        +Number masteryRate
+        +String nextReviewTopic
     }
 
-    class ScenePreset {
-        +str scene_type
-        +str name
-        +str description
-        +str icon
-        +str system_prompt
-        +str preferred_model
-        +str default_agent_type
+    class KnowledgeGraphMini {
+        +Number totalNodes
+        +Number weakNodes
+        +GraphNode[] nodes
     }
 
-    class SceneConfig {
-        +SCENE_PRESETS: Dict~str, ScenePreset~
+    class GraphNode {
+        +String id
+        +String label
+        +String color
+        +Boolean isWeak
     }
 
-    %% ========== Agent 层 ==========
-    class BaseAgent {
-        <<abstract>>
-        +str agent_type
-        +str system_prompt*
-        +_build_messages(messages, context) List
-        +_summarize_context(context) str
-        +async execute(messages, context) Dict
-        +async stream_execute(messages, context) AsyncGenerator
-        -async _call_llm(messages, temperature, max_tokens) Dict
-        -_demo_reply(messages) str
+    class StudyTimeData {
+        +String weekHours
+        +String todayHours
+        +Number streakDays
     }
 
-    class RAGAgent {
-        +str agent_type = "rag"
-        +str system_prompt
-        +async execute(messages, context) Dict
-        +async stream_execute(messages, context) AsyncGenerator
-        -async _search_knowledge(query, context) Dict
-        -async _query_graph(query, context) List
-        -_augment_messages(messages, search_results, graph_context) List
+    class ExamCountdownData {
+        +Number daysLeft
+        +String examName
+        +String examDate
     }
 
-    class SubjectAgent {
-        +str agent_type = "subject"
-        -str _subject
-        +str system_prompt
-        +async execute(messages, context) Dict
-        +async stream_execute(messages, context) AsyncGenerator
+    class ReviewProgressData {
+        +Number overallProgress
+        +SubjectProgress[] subjects
     }
 
-    %% ========== API 层 ==========
-    class AgentsAPI {
-        +GET /agents/models
-        +GET /agents/scenes
-        +GET /agents/sessions
-        +POST /agents/sessions
-        +GET /agents/sessions/:id
-        +POST /agents/sessions/:id/messages
-        +DELETE /agents/sessions/:id
-        +GET /agents/sessions/:id/context
-        +GET /agents/types
-        +POST /agents/intent
-        +WS /agents/ws/:session_id
+    class SubjectProgress {
+        +String subject
+        +Number progress
     }
 
-    %% ========== Schema 层 ==========
-    class ModelInfoResponse {
-        +str provider
-        +str model
-        +str status
-        +bool is_default
+    class WrongBookStats {
+        +Number pendingReview
+        +Number mastered
+        +Number correctRate
     }
 
-    class ScenePresetResponse {
-        +str scene_type
-        +str name
-        +str description
-        +str icon
-        +str preferred_model
+    class WeakPoint {
+        +String id
+        +String name
+        +WeaknessLevel level
     }
 
-    class CitationSchema {
-        +str type
-        +str title
-        +str source_url
-        +Optional~str~ teacher_name
+    class WeaknessLevel {
+        <<enum>>
+        CRITICAL = 'critical'
+        WARNING = 'warning'
+        CAUTION = 'caution'
     }
 
-    class ContextSummary {
-        +int notes_count
-        +int resources_count
-        +int graph_nodes_count
-        +int teacher_methods_count
+    class DiscussionTopic {
+        +String id
+        +String title
+        +Number participants
+        +Number replies
+        +Number heatScore
+        +String[] tags
     }
 
-    class SendMessageResponse {
-        +Dict user_message
-        +Dict assistant_message
-        +List~CitationSchema~ citations
-        +ContextSummary context_summary
-        +str model_used
-        +bool model_fallback
+    class MyDiscussionItem {
+        +String id
+        +String title
+        +DiscussionType type
+        +Number newReplies
+        +Boolean resolved
     }
 
-    %% ========== 关系 ==========
-    LLMRouter "1" *-- "0..3" ModelProvider : manages
-    ResourceContextBuilder ..> Citation : creates
-    ResourceContextBuilder ..> ContextResult : returns
-    ContextResult *-- "0..*" Citation : contains
-    SceneConfig "1" *-- "4" ScenePreset : defines
+    class DiscussionType {
+        <<enum>>
+        MY_QUESTION = 'my_question'
+        PARTICIPATED = 'participated'
+    }
 
-    BaseAgent ..> LLMRouter : uses _call_llm
-    BaseAgent <|-- RAGAgent : extends
-    BaseAgent <|-- SubjectAgent : extends
-    RAGAgent ..> ResourceContextBuilder : uses
-    SubjectAgent ..> ResourceContextBuilder : uses
+    class QuickAction {
+        +String label
+        +String icon
+        +String route
+        +String buttonType
+    }
 
-    ResourceContextBuilder ..> TeacherMethod : queries
-    TeacherMethod "1" --> "0..1" ClassroomRecord : relates
+    class StatItem {
+        +String label
+        +String|Number value
+        +String icon
+        +String color
+    }
 
-    AgentsAPI ..> LLMRouter : calls health_check
-    AgentsAPI ..> ResourceContextBuilder : calls build
-    AgentsAPI ..> SceneConfig : reads presets
-    AgentsAPI ..> RAGAgent : instantiates
-    AgentsAPI ..> SubjectAgent : instantiates
-    AgentsAPI ..> SendMessageResponse : returns
-    AgentsAPI ..> ModelInfoResponse : returns
-    AgentsAPI ..> ScenePresetResponse : returns
+    %% ===== 组件 Props =====
+    class SceneWelcomeBanner {
+        +SceneConfigEntry config
+    }
+
+    class SceneStatCard {
+        +StatItem[] stats
+    }
+
+    class QuickActionBar {
+        +QuickAction[] actions
+        +String title
+    }
+
+    class ClassroomDashboard {
+        +CourseScheduleItem[] todayCourses
+        +CourseScheduleItem currentCourse
+        +QuickAction[] toolbarActions
+    }
+
+    class SelfStudyDashboard {
+        +StudyTask[] tasks
+        +FlashcardStats flashcardStats
+        +KnowledgeGraphMini graphMini
+        +StudyTimeData studyTime
+    }
+
+    class ExamDashboard {
+        +ExamCountdownData countdown
+        +ReviewProgressData reviewProgress
+        +WrongBookStats wrongBookStats
+        +WeakPoint[] weakPoints
+        +QuickAction[] toolbarActions
+    }
+
+    class DiscussionDashboard {
+        +DiscussionTopic[] hotTopics
+        +MyDiscussionItem[] myDiscussions
+        +QuickAction[] collabActions
+    }
+
+    %% ===== 关系 =====
+    SCENE_CONFIG --> SceneConfigEntry : Record~SceneType, ~
+    SceneConfigEntry --> SceneType : keyed by
+
+    CourseScheduleItem --> CourseStatus : status
+    StudyTask --> CourseScheduleItem : shares id pattern
+    KnowledgeGraphMini --> GraphNode : nodes[]
+    ReviewProgressData --> SubjectProgress : subjects[]
+    WeakPoint --> WeaknessLevel : level
+    MyDiscussionItem --> DiscussionType : type
+
+    SceneWelcomeBanner --> SceneConfigEntry : props.config
+    SceneStatCard --> StatItem : props.stats[]
+    QuickActionBar --> QuickAction : props.actions[]
+
+    ClassroomDashboard --> CourseScheduleItem : todayCourses[]
+    ClassroomDashboard --> QuickAction : toolbarActions[]
+    SelfStudyDashboard --> StudyTask : tasks[]
+    SelfStudyDashboard --> FlashcardStats : flashcardStats
+    SelfStudyDashboard --> KnowledgeGraphMini : graphMini
+    SelfStudyDashboard --> StudyTimeData : studyTime
+    ExamDashboard --> ExamCountdownData : countdown
+    ExamDashboard --> ReviewProgressData : reviewProgress
+    ExamDashboard --> WrongBookStats : wrongBookStats
+    ExamDashboard --> WeakPoint : weakPoints[]
+    ExamDashboard --> QuickAction : toolbarActions[]
+    DiscussionDashboard --> DiscussionTopic : hotTopics[]
+    DiscussionDashboard --> MyDiscussionItem : myDiscussions[]
+    DiscussionDashboard --> QuickAction : collabActions[]
