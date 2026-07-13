@@ -12,6 +12,7 @@ from app.models.user import User
 from app.schemas.common import APIResponse, PaginationParams
 from app.schemas.note import AIEnhanceRequest, AIEnhanceResponse, NoteCreate, NoteUpdate, ShareResponse
 from app.services.note_service import NoteService
+from app.services.search_service import search_service
 
 router = APIRouter()
 
@@ -58,6 +59,9 @@ async def create_note(
         tags=note_data.tags,
         is_encrypted=note_data.is_encrypted,
     )
+    # E2E 加密笔记不发送到外部搜索索引；普通笔记索引失败也不影响保存。
+    if not note_data.is_encrypted:
+        await search_service.index_note(result)
     return APIResponse(data=result, message="success")
 
 
@@ -100,6 +104,7 @@ async def update_note(
     )
     if not result:
         raise HTTPException(status_code=404, detail="笔记不存在或无权修改")
+    await search_service.index_note(result)
     return APIResponse(data=result, message="success")
 
 
@@ -118,6 +123,7 @@ async def delete_note(
     )
     if not success:
         raise HTTPException(status_code=404, detail="笔记不存在")
+    await search_service.delete_document("note", note_id)
     return APIResponse(data=None, message="笔记已删除")
 
 

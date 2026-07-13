@@ -95,6 +95,7 @@ export const sceneRoutes: RouteRecordRaw[] = [
         meta: {
           title: '搜索',
           requiresAuth: true,
+          allowedRoles: ['student', 'teacher'],
         },
       },
       {

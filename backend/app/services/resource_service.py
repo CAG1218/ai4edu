@@ -195,11 +195,17 @@ class ResourceService:
             await search_service.index_document(
                 str(resource.id),
                 {
+                    "id": resource.id,
                     "title": resource.title,
                     "content": parsed_text[:5000] if parsed_text else "",
                     "description": resource.description or "",
                     "doc_type": "resource",
                     "resource_type": resource.resource_type,
+                    "tenant_id": resource.tenant_id,
+                    "uploader_id": resource.uploader_id,
+                    "course_id": resource.course_id,
+                    "is_public": resource.is_public,
+                    "updated_at": resource.updated_at.isoformat() if resource.updated_at else None,
                 },
             )
         except Exception as e:
