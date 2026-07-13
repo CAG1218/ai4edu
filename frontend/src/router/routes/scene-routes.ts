@@ -80,6 +80,16 @@ export const sceneRoutes: RouteRecordRaw[] = [
         },
       },
       {
+        path: 'graph/cross-subject',
+        name: 'CrossSubjectGraph',
+        component: () => import('@/views/graph/CrossSubjectGraphView.vue'),
+        meta: {
+          title: '跨学科关联图谱',
+          requiresAuth: true,
+          allowedRoles: ['student', 'teacher', 'admin', 'super_admin'],
+        },
+      },
+      {
         path: 'graph/:id',
         name: 'GraphDetail',
         component: () => import('@/views/graph/GraphDetailView.vue'),

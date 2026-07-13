@@ -5,20 +5,35 @@
         <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
           <polygon points="0 0, 10 3.5, 0 7" fill="#999" />
         </marker>
+        <!-- 跨学科关系渐变色定义 -->
+        <linearGradient
+          v-for="(grad, idx) in crossGradients"
+          :key="`grad-${idx}`"
+          :id="`cross-grad-${idx}`"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0%" :stop-color="grad.color1" />
+          <stop offset="100%" :stop-color="grad.color2" />
+        </linearGradient>
       </defs>
+
       <g class="links">
         <line
-          v-for="link in renderedLinks"
-          :key="`${link.source.id || link.source}-${link.target.id || link.target}`"
+          v-for="(link, idx) in renderedLinks"
+          :key="`link-${idx}`"
           :x1="getLinkX(link, 'source', 'x')"
           :y1="getLinkX(link, 'source', 'y')"
           :x2="getLinkX(link, 'target', 'x')"
           :y2="getLinkX(link, 'target', 'y')"
-          stroke="#ccc"
-          stroke-width="1.5"
+          :stroke="getLinkStroke(link, idx)"
+          :stroke-width="getLinkWidth(link)"
+          :stroke-dasharray="getLinkDashArray(link)"
           :marker-end="link.type !== 'RELATED' ? 'url(#arrowhead)' : ''"
+          class="link-line"
+          @click.stop="onLinkClick(link)"
         />
       </g>
+
       <g class="nodes">
         <g
           v-for="node in renderedNodes"
@@ -26,17 +41,28 @@
           :transform="`translate(${node.x || 0}, ${node.y || 0})`"
           class="node-group"
           @mousedown.prevent="onNodeDragStart($event, node)"
-          @mouseenter="onNodeHover(node)"
+          @mouseenter="onNodeHover(node, $event)"
           @mouseleave="onNodeLeave"
           @click="onNodeClick(node)"
         >
           <circle
             :r="getNodeRadius(node)"
             :fill="getNodeColor(node)"
-            stroke="#fff"
-            stroke-width="2"
+            :stroke="getNodeStroke(node)"
+            :stroke-width="getNodeStrokeWidth(node)"
             class="node-circle"
           />
+          <!-- Misconception 小图标（跨学科模式） -->
+          <text
+            v-if="crossSubjectMode && node.has_misconception"
+            :dy="-(getNodeRadius(node) + 4)"
+            text-anchor="middle"
+            font-size="14"
+            fill="#E6A23C"
+            class="node-warning-icon"
+          >
+            ⚠
+          </text>
           <text
             :dy="getNodeRadius(node) + 14"
             text-anchor="middle"
@@ -49,12 +75,15 @@
         </g>
       </g>
     </svg>
+
     <!-- Tooltip -->
     <div v-if="hoveredNode" class="force-graph__tooltip" :style="tooltipStyle">
       <strong>{{ hoveredNode.name || hoveredNode.id }}</strong>
       <p v-if="hoveredNode.description">{{ hoveredNode.description }}</p>
-      <p v-if="hoveredNode.subject">学科: {{ hoveredNode.subject }}</p>
+      <p v-if="hoveredNode.subject">学科: {{ subjectNameMap[hoveredNode.subject] || hoveredNode.subject }}</p>
+      <p v-if="hoveredNode.has_misconception" style="color: #E6A23C;">⚠ 存在常见误解标注</p>
     </div>
+
     <!-- 缩放控制 -->
     <div class="force-graph__controls">
       <el-button size="small" circle @click="zoomIn">
@@ -72,8 +101,9 @@
 
 <script setup lang="ts">
 /**
- * AI4Edu D3 力导向图组件
- * 支持：拖拽/缩放/hover tooltip/节点点击emit
+ * AI4EDU 力导向图组件（自定义 SVG 实现，不依赖 D3）
+ * 支持：拖拽/缩放/hover tooltip/节点点击/关系点击
+ * 跨学科模式：虚线+渐变色连线、学科聚合力、misconception节点橙色边框
  */
 import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
 import { ZoomIn, ZoomOut, FullScreen } from '@element-plus/icons-vue'
@@ -83,6 +113,7 @@ interface GraphNode {
   name?: string
   subject?: string
   description?: string
+  has_misconception?: boolean
   x?: number
   y?: number
   [key: string]: unknown
@@ -93,6 +124,9 @@ interface GraphLink {
   target: string | GraphNode
   type?: string
   label?: string
+  is_cross?: boolean
+  strength?: number
+  strength_label?: string
 }
 
 const props = withDefaults(defineProps<{
@@ -100,14 +134,19 @@ const props = withDefaults(defineProps<{
   links: GraphLink[]
   width?: string
   height?: string
+  crossSubjectMode?: boolean
+  subjectColors?: Record<string, string>
 }>(), {
   width: '100%',
   height: '600px',
+  crossSubjectMode: false,
+  subjectColors: () => ({}),
 })
 
 const emit = defineEmits<{
   (e: 'node-click', node: GraphNode): void
   (e: 'node-hover', node: GraphNode | null): void
+  (e: 'link-click', link: GraphLink): void
 }>()
 
 const containerRef = ref<HTMLDivElement | null>(null)
@@ -129,13 +168,8 @@ const currentTranslate = ref({ x: 0, y: 0 })
 // 拖拽状态
 let dragNode: GraphNode | null = null
 
-const tooltipStyle = computed(() => ({
-  left: `${tooltipPos.value.x + 15}px`,
-  top: `${tooltipPos.value.y - 10}px`,
-}))
-
-// 学科颜色映射
-const subjectColors: Record<string, string> = {
+// 学科颜色映射（可被 props 覆盖）
+const defaultSubjectColors: Record<string, string> = {
   math: '#1976D2',
   physics: '#F57C00',
   chemistry: '#4CAF50',
@@ -150,6 +184,40 @@ const subjectColors: Record<string, string> = {
   art: '#AD1457',
 }
 
+const subjectNameMap: Record<string, string> = {
+  math: '数学', physics: '物理学', chemistry: '化学', biology: '生物学',
+  cs: '计算机科学', chinese: '语文', english: '英语', history: '历史',
+  geography: '地理', politics: '政治', pe: '体育', art: '艺术',
+}
+
+// 合并默认颜色和传入颜色
+const mergedColors = computed(() => ({ ...defaultSubjectColors, ...props.subjectColors }))
+
+// 跨学科关系渐变色定义
+const crossGradients = computed(() => {
+  const grads: Array<{ color1: string; color2: string }> = []
+  for (const link of renderedLinks.value) {
+    if (!link.is_cross) continue
+    const srcNode = findNode(link.source)
+    const tgtNode = findNode(link.target)
+    grads.push({
+      color1: mergedColors.value[srcNode?.subject || ''] || '#5B8FF9',
+      color2: mergedColors.value[tgtNode?.subject || ''] || '#5B8FF9',
+    })
+  }
+  return grads
+})
+
+const tooltipStyle = computed(() => ({
+  left: `${tooltipPos.value.x + 15}px`,
+  top: `${tooltipPos.value.y - 10}px`,
+}))
+
+function findNode(ref: string | GraphNode): GraphNode | undefined {
+  if (typeof ref === 'object' && ref !== null) return ref as GraphNode
+  return renderedNodes.value.find((n) => n.id === ref)
+}
+
 function getNodeRadius(node: GraphNode): number {
   const linkCount = props.links.filter(
     (l) => (l.source === node.id || l.source === node) || (l.target === node.id || l.target === node)
@@ -158,7 +226,53 @@ function getNodeRadius(node: GraphNode): number {
 }
 
 function getNodeColor(node: GraphNode): string {
-  return subjectColors[node.subject || ''] || '#5B8FF9'
+  return mergedColors.value[node.subject || ''] || '#5B8FF9'
+}
+
+function getNodeStroke(node: GraphNode): string {
+  if (node.has_misconception) return '#E6A23C'
+  return '#fff'
+}
+
+function getNodeStrokeWidth(node: GraphNode): number {
+  if (node.has_misconception) return 3
+  return 2
+}
+
+function getLinkStroke(link: GraphLink, idx: number): string {
+  if (props.crossSubjectMode && link.is_cross) {
+    return `url(#cross-grad-${getCrossGradientIndex(link)})`
+  }
+  if (props.crossSubjectMode && link.strength !== undefined) {
+    if (link.strength >= 0.7) return '#666'
+    if (link.strength >= 0.4) return '#999'
+    return '#ccc'
+  }
+  return '#ccc'
+}
+
+function getCrossGradientIndex(link: GraphLink): number {
+  let count = 0
+  for (const l of renderedLinks.value) {
+    if (l === link) return count
+    if (l.is_cross) count++
+  }
+  return 0
+}
+
+function getLinkWidth(link: GraphLink): number {
+  if (link.strength !== undefined) {
+    if (link.is_cross) return 1 + link.strength * 4
+    return 1 + link.strength * 3
+  }
+  return 1.5
+}
+
+function getLinkDashArray(link: GraphLink): string {
+  if (props.crossSubjectMode && link.is_cross) {
+    return '6,4'
+  }
+  return 'none'
 }
 
 function getLinkX(link: GraphLink, end: 'source' | 'target', axis: 'x' | 'y'): number {
@@ -166,7 +280,6 @@ function getLinkX(link: GraphLink, end: 'source' | 'target', axis: 'x' | 'y'): n
   if (typeof val === 'object' && val !== null) {
     return (val as GraphNode)[axis] || 0
   }
-  // 查找节点位置
   const node = renderedNodes.value.find((n) => n.id === val)
   return node?.[axis] || 0
 }
@@ -189,20 +302,47 @@ function initLayout(): void {
   const cx = svgWidth.value / 2
   const cy = svgHeight.value / 2
 
-  // 初始化节点位置
+  // 初始化节点位置（跨学科模式按学科分组初始化）
+  const subjectGroups: Record<string, number[]> = {}
+  if (props.crossSubjectMode) {
+    props.nodes.forEach((n, i) => {
+      const subj = n.subject || 'default'
+      if (!subjectGroups[subj]) subjectGroups[subj] = []
+      subjectGroups[subj].push(i)
+    })
+  }
+
   const nodes = props.nodes.map((n, i) => {
-    const angle = (2 * Math.PI * i) / props.nodes.length
-    const r = Math.min(svgWidth.value, svgHeight.value) * 0.3
+    let initX: number, initY: number
+
+    if (props.crossSubjectMode) {
+      // 按学科分组，每组占据一个扇区
+      const subjects = Object.keys(subjectGroups)
+      const subjIdx = subjects.indexOf(n.subject || 'default')
+      const subjCount = subjects.length
+      const groupSize = subjectGroups[n.subject || 'default']?.length || 1
+      const withinGroupIdx = subjectGroups[n.subject || 'default']?.indexOf(i) || 0
+      const groupAngle = (2 * Math.PI * subjIdx) / subjCount
+      const withinAngle = (2 * Math.PI * withinGroupIdx) / groupSize
+      const r = Math.min(svgWidth.value, svgHeight.value) * 0.3
+      initX = cx + r * Math.cos(groupAngle + withinAngle * 0.3)
+      initY = cy + r * Math.sin(groupAngle + withinAngle * 0.3)
+    } else {
+      const angle = (2 * Math.PI * i) / props.nodes.length
+      const r = Math.min(svgWidth.value, svgHeight.value) * 0.3
+      initX = cx + r * Math.cos(angle)
+      initY = cy + r * Math.sin(angle)
+    }
+
     return {
       ...n,
-      x: n.x ?? cx + r * Math.cos(angle),
-      y: n.y ?? cy + r * Math.sin(angle),
+      x: n.x ?? initX,
+      y: n.y ?? initY,
       vx: 0,
       vy: 0,
     }
   })
 
-  // 构建链接引用
   const links = props.links.map((l) => ({
     ...l,
     source: typeof l.source === 'object' ? (l.source as GraphNode).id : l.source,
@@ -212,7 +352,6 @@ function initLayout(): void {
   renderedNodes.value = nodes
   renderedLinks.value = links
 
-  // 运行力模拟
   runSimulation(nodes, links)
 }
 
@@ -269,6 +408,32 @@ function runSimulation(nodes: GraphNode[], links: GraphLink[]): void {
       }
     }
 
+    // 跨学科模式：学科聚合力（同学科节点间额外引力 30%）
+    if (props.crossSubjectMode) {
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          if (nodes[i].subject === nodes[j].subject && nodes[i].subject) {
+            const dx = (nodes[j].x || 0) - (nodes[i].x || 0)
+            const dy = (nodes[j].y || 0) - (nodes[i].y || 0)
+            const dist = Math.sqrt(dx * dx + dy * dy) || 1
+            // 同学科吸引力：距离远时拉近，距离近时排斥
+            const force = (dist - 80) * 0.003 * currentAlpha
+            const fx = (dx / dist) * force
+            const fy = (dy / dist) * force
+
+            if (!isDragging(nodes[i])) {
+              nodes[i].x = (nodes[i].x || 0) + fx
+              nodes[i].y = (nodes[i].y || 0) + fy
+            }
+            if (!isDragging(nodes[j])) {
+              nodes[j].x = (nodes[j].x || 0) - fx
+              nodes[j].y = (nodes[j].y || 0) - fy
+            }
+          }
+        }
+      }
+    }
+
     // 向心力
     for (const node of nodes) {
       if (isDragging(node)) continue
@@ -312,8 +477,12 @@ function onNodeDragStart(event: MouseEvent, node: GraphNode): void {
   document.addEventListener('mouseup', onMouseUp)
 }
 
-function onNodeHover(node: GraphNode): void {
+function onNodeHover(node: GraphNode, event?: MouseEvent): void {
   hoveredNode.value = node
+  if (event && containerRef.value) {
+    const rect = containerRef.value.getBoundingClientRect()
+    tooltipPos.value = { x: event.clientX - rect.left, y: event.clientY - rect.top }
+  }
   emit('node-hover', node)
 }
 
@@ -324,6 +493,10 @@ function onNodeLeave(): void {
 
 function onNodeClick(node: GraphNode): void {
   emit('node-click', node)
+}
+
+function onLinkClick(link: GraphLink): void {
+  emit('link-click', link)
 }
 
 function zoomIn(): void {
@@ -405,6 +578,20 @@ onUnmounted(() => {
   .node-label {
     pointer-events: none;
     user-select: none;
+  }
+
+  .node-warning-icon {
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .link-line {
+    cursor: pointer;
+    transition: stroke-width 0.15s ease;
+
+    &:hover {
+      stroke-width: 4;
+    }
   }
 
   &__tooltip {

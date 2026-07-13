@@ -1,5 +1,5 @@
 /**
- * AI4Edu 知识图谱 API
+ * AI4EDU 知识图谱 API
  */
 import api from './api'
 
@@ -12,6 +12,7 @@ export interface SquareStat {
   color: string
   node_count: number
   completeness: number
+  misconception_count: number
 }
 
 export interface KnowledgeNode {
@@ -20,6 +21,8 @@ export interface KnowledgeNode {
   subject?: string
   description?: string
   cognitive_level?: Record<string, number>
+  has_misconception?: boolean
+  misconceptions?: Misconception[]
   [key: string]: unknown
 }
 
@@ -28,6 +31,9 @@ export interface GraphLink {
   target: string
   type: string
   label: string
+  strength?: number
+  strength_label?: '强' | '中' | '弱'
+  is_cross?: boolean
 }
 
 export interface NeighborData {
@@ -37,8 +43,92 @@ export interface NeighborData {
 
 export interface CognitiveGoal {
   dimensions: string[]
+  dimension_keys?: string[]
   values: number[]
+  subject_avg?: number[] | null
   node_name: string
+}
+
+// ========== Misconception 类型 ==========
+
+export interface Misconception {
+  mc_id: string
+  misconception: string
+  correction: string
+  topic: string
+  keywords: string[]
+  source: 'teacher' | 'ai' | 'system'
+  annotated_by: number | null
+  annotated_at: string
+  confidence: number
+}
+
+export interface MisconceptionInput {
+  misconception: string
+  correction: string
+  topic: string
+  keywords: string[]
+}
+
+export interface MisconceptionSuggestion {
+  misconception: string
+  correction: string
+  topic: string
+  keywords: string[]
+  subject: string
+  confidence: number
+}
+
+export interface AutoSuggestResponse {
+  suggestions: MisconceptionSuggestion[]
+  total: number
+}
+
+// ========== 跨学科图谱类型 ==========
+
+export interface CrossSubjectNode {
+  id: string
+  name: string
+  subject: string
+  description?: string | null
+  has_misconception: boolean
+  degree: number
+}
+
+export interface CrossSubjectLink {
+  source: string
+  target: string
+  type: string
+  label: string
+  is_cross: boolean
+  strength: number
+  strength_label: '强' | '中' | '弱'
+}
+
+export interface CrossSubjectStats {
+  total_nodes: number
+  total_links: number
+  cross_links: number
+  avg_strength: number
+  subject_distribution: Record<string, number>
+  top_cross_pairs?: Array<Record<string, unknown>>
+}
+
+export interface CrossSubjectResponse {
+  nodes: CrossSubjectNode[]
+  links: CrossSubjectLink[]
+  stats: CrossSubjectStats
+}
+
+// ========== 任务类型 ==========
+
+export interface NodeTask {
+  task_id: string
+  name: string
+  type: 'learning' | 'review' | 'diagnosis'
+  status: 'pending' | 'in_progress' | 'completed'
+  due_date: string | null
+  source: 'course' | 'diagnosis'
 }
 
 // ============ API 方法 ============
@@ -79,8 +169,10 @@ export const graphApi = {
   },
 
   /** 获取认知目标 */
-  async getCognitiveGoals(nodeId: string): Promise<CognitiveGoal> {
-    const response = await api.get(`/graphs/nodes/${nodeId}/cognitive`)
+  async getCognitiveGoals(nodeId: string, includeAvg = false): Promise<CognitiveGoal> {
+    const response = await api.get(`/graphs/nodes/${nodeId}/cognitive`, {
+      params: { include_avg: includeAvg },
+    })
     return response.data
   },
 
@@ -115,6 +207,59 @@ export const graphApi = {
   async searchNodes(q: string, subject?: string, limit = 20): Promise<KnowledgeNode[]> {
     const response = await api.get('/graphs/search', {
       params: { q, subject, limit },
+    })
+    return response.data
+  },
+
+  // ========== Misconception API ==========
+
+  /** 获取节点误解标注列表 */
+  async getMisconceptions(nodeId: string): Promise<Misconception[]> {
+    const response = await api.get(`/graphs/nodes/${nodeId}/misconceptions`)
+    return response.data
+  },
+
+  /** 教师添加误解标注 */
+  async addMisconception(nodeId: string, data: MisconceptionInput): Promise<Misconception> {
+    const response = await api.post(`/graphs/nodes/${nodeId}/misconceptions`, data)
+    return response.data
+  },
+
+  /** 教师编辑误解标注 */
+  async updateMisconception(nodeId: string, mcId: string, data: Partial<MisconceptionInput>): Promise<Misconception> {
+    const response = await api.put(`/graphs/nodes/${nodeId}/misconceptions/${mcId}`, data)
+    return response.data
+  },
+
+  /** 教师删除误解标注 */
+  async deleteMisconception(nodeId: string, mcId: string): Promise<void> {
+    await api.delete(`/graphs/nodes/${nodeId}/misconceptions/${mcId}`)
+  },
+
+  /** AI辅助标注建议 */
+  async suggestMisconceptions(nodeId: string): Promise<AutoSuggestResponse> {
+    const response = await api.post(`/graphs/nodes/${nodeId}/misconceptions/auto-suggest`)
+    return response.data
+  },
+
+  // ========== 任务 API ==========
+
+  /** 获取节点关联任务 */
+  async getNodeTasks(nodeId: string): Promise<NodeTask[]> {
+    const response = await api.get(`/graphs/nodes/${nodeId}/tasks`)
+    return response.data
+  },
+
+  // ========== 跨学科图谱 API ==========
+
+  /** 获取跨学科关联图谱 */
+  async getCrossSubjectGraph(subjects: string[], minStrength = 0.0, maxNodes = 100): Promise<CrossSubjectResponse> {
+    const response = await api.get('/graphs/cross-subject', {
+      params: {
+        subjects: subjects.join(','),
+        min_strength: minStrength,
+        max_nodes: maxNodes,
+      },
     })
     return response.data
   },
