@@ -3,7 +3,7 @@
     <Sidebar v-if="showSidebar" :collapsed="sidebarCollapsed" @toggle="toggleSidebar" />
     <div class="app-layout__main" :class="{ 'app-layout__main--collapsed': sidebarCollapsed }">
       <Header />
-      <main class="app-layout__content">
+      <main class="app-layout__content" @click="collapseSidebar">
         <router-view />
       </main>
     </div>
@@ -29,6 +29,12 @@ const sidebarCollapsed = computed(() => userStore.preferences.sidebarCollapsed)
 
 function toggleSidebar() {
   userStore.toggleSidebar()
+}
+
+function collapseSidebar() {
+  if (!sidebarCollapsed.value) {
+    userStore.updatePreferences({ sidebarCollapsed: true })
+  }
 }
 </script>
 

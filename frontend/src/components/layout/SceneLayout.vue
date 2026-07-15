@@ -50,7 +50,7 @@
           </div>
         </template>
       </Header>
-      <main class="scene-layout__content">
+      <main class="scene-layout__content" @click="collapseSidebar">
         <router-view />
       </main>
     </div>
@@ -151,6 +151,12 @@ async function switchToRecommended(): Promise<void> {
 
 function toggleSidebar() {
   userStore.toggleSidebar()
+}
+
+function collapseSidebar() {
+  if (!sidebarCollapsed.value) {
+    userStore.updatePreferences({ sidebarCollapsed: true })
+  }
 }
 </script>
 
