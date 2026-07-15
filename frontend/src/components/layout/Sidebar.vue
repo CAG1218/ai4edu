@@ -9,6 +9,7 @@
       :default-active="activeMenu"
       :collapse="collapsed"
       :collapse-transition="true"
+      router
       class="sidebar__menu"
       background-color="transparent"
       text-color="rgba(255, 255, 255, 0.8)"
@@ -48,7 +49,6 @@
           v-for="item in featureMenus"
           :key="item.index"
           :index="item.index"
-          @click="navigateTo(item.index)"
         >
           <el-icon><component :is="item.icon" /></el-icon>
           <template #title>{{ item.title }}</template>
@@ -73,7 +73,7 @@
  * 支持折叠/展开，根据用户角色显示不同菜单
  */
 import { computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
 defineProps<{
@@ -85,7 +85,6 @@ defineEmits<{
 }>()
 
 const route = useRoute()
-const router = useRouter()
 const authStore = useAuthStore()
 
 const activeMenu = computed(() => route.path)
@@ -108,9 +107,6 @@ const featureMenus = computed(() => [
   { index: `/scene/${currentSceneType.value}/search`, icon: 'Search', title: '全局搜索' },
 ])
 
-function navigateTo(path: string): void {
-  router.push(path)
-}
 </script>
 
 <style lang="scss" scoped>

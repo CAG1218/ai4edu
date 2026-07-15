@@ -144,7 +144,7 @@
     <!-- 空状态 -->
     <el-empty
       v-else
-      description="请选择至少2个学科并点击"构建图谱"按钮"
+      description='请选择至少2个学科并点击"构建图谱"按钮'
       :image-size="120"
     />
 

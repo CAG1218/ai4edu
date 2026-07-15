@@ -94,8 +94,8 @@ export function setupGuards(router: Router): void {
     }
 
     // 检查角色权限
-    const allowedRoles = to.meta.allowedRoles as string[] | undefined
-    if (allowedRoles && authStore.user) {
+    const allowedRoles = (to.meta.allowedRoles ?? to.meta.roles) as string[] | undefined
+    if (allowedRoles && authStore.user && authStore.user.role !== 'super_admin') {
       if (!allowedRoles.includes(authStore.user.role)) {
         next({ path: '/' })
         return
