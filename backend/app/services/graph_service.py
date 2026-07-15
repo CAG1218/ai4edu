@@ -20,10 +20,10 @@ logger = logging.getLogger(__name__)
 
 # 12个学科分类
 SUBJECT_CATEGORIES = [
-    {"id": "math", "name": "数学", "icon": "Calculator", "color": "#1976D2"},
+    {"id": "math", "name": "数学", "icon": "DataAnalysis", "color": "#1976D2"},
     {"id": "physics", "name": "物理学", "icon": "Cpu", "color": "#F57C00"},
-    {"id": "chemistry", "name": "化学", "icon": "Flask", "color": "#4CAF50"},
-    {"id": "biology", "name": "生物学", "icon": "Microscope", "color": "#388E3C"},
+    {"id": "chemistry", "name": "化学", "icon": "MagicStick", "color": "#4CAF50"},
+    {"id": "biology", "name": "生物学", "icon": "Grape", "color": "#388E3C"},
     {"id": "cs", "name": "计算机科学", "icon": "Monitor", "color": "#7B1FA2"},
     {"id": "chinese", "name": "语文", "icon": "Reading", "color": "#D32F2F"},
     {"id": "english", "name": "英语", "icon": "ChatDotRound", "color": "#00796B"},
