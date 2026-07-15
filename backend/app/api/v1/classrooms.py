@@ -32,7 +32,7 @@ async def create_classroom(
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """创建新的课堂互动"""
-    if current_user.role not in ("teacher", "admin"):
+    if current_user.role not in ("teacher", "admin", "super_admin"):
         raise HTTPException(status_code=403, detail="只有教师可以创建课堂")
 
     service = ClassroomService(db)
@@ -136,6 +136,7 @@ async def create_poll(
         options=poll_data.options,
         poll_type=poll_data.poll_type,
         is_anonymous=poll_data.is_anonymous,
+        bypass_owner_check=current_user.role == "super_admin",
     )
     return APIResponse(code=0, data=result, message="success")
 
@@ -187,6 +188,7 @@ async def end_classroom(
     success = await service.end_classroom(
         classroom_id=classroom_id,
         teacher_id=current_user.id,
+        bypass_owner_check=current_user.role == "super_admin",
     )
     if not success:
         raise HTTPException(status_code=400, detail="结束课堂失败")

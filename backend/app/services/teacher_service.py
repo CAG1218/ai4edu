@@ -228,6 +228,7 @@ class TeacherService:
         materials: Optional[List[str]] = None,
         duration_minutes: Optional[int] = None,
         status: Optional[str] = None,
+        bypass_owner_check: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """更新教案"""
         stmt = select(LessonPlan).where(
@@ -243,7 +244,7 @@ class TeacherService:
         if not plan:
             return None
 
-        if plan.teacher_id != teacher_id:
+        if plan.teacher_id != teacher_id and not bypass_owner_check:
             raise PermissionDeniedException(message="只能修改自己的教案")
 
         if title is not None:
@@ -269,6 +270,7 @@ class TeacherService:
         plan_id: int,
         tenant_id: int,
         teacher_id: int,
+        bypass_owner_check: bool = False,
     ) -> bool:
         """删除教案（软删除）"""
         stmt = select(LessonPlan).where(
@@ -284,7 +286,7 @@ class TeacherService:
         if not plan:
             return False
 
-        if plan.teacher_id != teacher_id:
+        if plan.teacher_id != teacher_id and not bypass_owner_check:
             raise PermissionDeniedException(message="只能删除自己的教案")
 
         plan.is_active = False

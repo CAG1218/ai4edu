@@ -94,7 +94,11 @@ class SearchService:
         return {"summary": summary, "keywords": keywords}
 
     async def _accessible_course_ids(self, db: AsyncSession, user: User) -> Set[int]:
-        if user.role == "teacher":
+        if user.role == "super_admin":
+            stmt = select(Course.id).where(
+                Course.tenant_id == (user.tenant_id or 0), Course.is_active.is_(True)
+            )
+        elif user.role == "teacher":
             stmt = select(Course.id).where(
                 Course.tenant_id == (user.tenant_id or 0), Course.teacher_id == user.id, Course.is_active.is_(True)
             )

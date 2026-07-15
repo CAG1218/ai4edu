@@ -29,7 +29,9 @@ export const useAuthStore = defineStore('auth', () => {
   const userRole = computed<string>(() => user.value?.role ?? 'student')
 
   /** 是否是教师 */
-  const isTeacher = computed<boolean>(() => userRole.value === 'teacher' || userRole.value === 'admin')
+  const isTeacher = computed<boolean>(() =>
+    ['teacher', 'admin', 'super_admin'].includes(userRole.value),
+  )
 
   /** 是否是管理员 */
   const isAdmin = computed<boolean>(() => userRole.value === 'admin' || userRole.value === 'super_admin')

@@ -93,7 +93,7 @@ async def change_password(
     current_user: User = Depends(get_current_user),
 ) -> APIResponse[None]:
     """修改用户密码（仅本人可操作）"""
-    if current_user.id != user_id:
+    if current_user.id != user_id and current_user.role != "super_admin":
         raise HTTPException(status_code=403, detail="无权修改他人密码")
 
     user_service = UserService(db)
@@ -134,7 +134,7 @@ async def complete_onboarding(
     - 推荐默认场景
     - 标记引导完成
     """
-    if current_user.id != user_id:
+    if current_user.id != user_id and current_user.role != "super_admin":
         raise HTTPException(status_code=403, detail="无权操作")
 
     user_service = UserService(db)

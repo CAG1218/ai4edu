@@ -230,7 +230,7 @@ class ClassroomHandler:
         data: Dict[str, Any],
     ) -> None:
         """处理教师回答"""
-        if user_role not in ("teacher", "assistant"):
+        if user_role not in ("teacher", "assistant", "super_admin"):
             return
 
         target_user_id = data.get("target_user_id")

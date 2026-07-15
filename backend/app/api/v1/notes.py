@@ -101,6 +101,7 @@ async def update_note(
         content_plain=note_data.content_plain,
         tags=note_data.tags,
         change_summary=note_data.change_summary,
+        bypass_owner_check=current_user.role == "super_admin",
     )
     if not result:
         raise HTTPException(status_code=404, detail="笔记不存在或无权修改")
@@ -120,6 +121,7 @@ async def delete_note(
         note_id=note_id,
         tenant_id=current_user.tenant_id or 0,
         user_id=current_user.id,
+        bypass_owner_check=current_user.role == "super_admin",
     )
     if not success:
         raise HTTPException(status_code=404, detail="笔记不存在")
@@ -174,5 +176,6 @@ async def share_note(
         note_id=note_id,
         tenant_id=current_user.tenant_id or 0,
         user_id=current_user.id,
+        bypass_owner_check=current_user.role == "super_admin",
     )
     return APIResponse(data=result, message="success")
