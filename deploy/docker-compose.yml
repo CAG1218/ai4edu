@@ -86,7 +86,7 @@ services:
 
   # ============ PostgreSQL ============
   postgres:
-    image: docker.1ms.run/library/postgres:16-alpine
+    image: postgres:16-alpine
     container_name: ai4edu-postgres
     ports:
       - "5432:5432"
@@ -107,7 +107,7 @@ services:
 
   # ============ Neo4j ============
   neo4j:
-    image: docker.1ms.run/library/neo4j:5.20
+    image: neo4j:5.20
     container_name: ai4edu-neo4j
     ports:
       - "7474:7474"
@@ -129,7 +129,7 @@ services:
 
   # ============ ClickHouse ============
   clickhouse:
-    image: docker.1ms.run/clickhouse/clickhouse-server:24.1
+    image: clickhouse/clickhouse-server:24.1
     container_name: ai4edu-clickhouse
     ports:
       - "8123:8123"
@@ -150,7 +150,7 @@ services:
 
   # ============ Redis ============
   redis:
-    image: docker.1ms.run/library/redis:7-alpine
+    image: redis:7-alpine
     container_name: ai4edu-redis
     ports:
       - "6379:6379"
@@ -167,7 +167,7 @@ services:
 
   # ============ Elasticsearch ============
   elasticsearch:
-    image: docker.1ms.run/library/elasticsearch:8.13.0
+    image: elasticsearch:8.13.0
     container_name: ai4edu-elasticsearch
     ports:
       - "9200:9200"
@@ -188,7 +188,7 @@ services:
 
   # ============ MinIO ============
   minio:
-    image: docker.1ms.run/minio/minio:latest
+    image: minio/minio:latest
     container_name: ai4edu-minio
     ports:
       - "9002:9000"

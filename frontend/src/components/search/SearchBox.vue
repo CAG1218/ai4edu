@@ -10,6 +10,8 @@
       class="search-box__input"
       @select="handleSelect"
       @keyup.enter="handleSearch"
+      @focus="handleFocus"
+      @blur="handleBlur"
     >
       <template #prefix>
         <el-icon><Search /></el-icon>
@@ -44,11 +46,12 @@
  * el-autocomplete + 搜索历史 + Ctrl+K 快捷键
  */
 import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Search, Clock } from '@element-plus/icons-vue'
 import { useSearchStore } from '@/stores/search'
 
 const router = useRouter()
+const route = useRoute()
 const searchStore = useSearchStore()
 
 const query = ref('')
@@ -94,6 +97,7 @@ function handleHistoryClick(item: string): void {
 function navigateToSearch(q: string): void {
   router.push({
     name: 'Search',
+    params: { sceneType: route.params.sceneType || 'self-study' },
     query: { q },
   })
 }

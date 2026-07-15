@@ -201,6 +201,7 @@ class NoteService:
         tags: Optional[List[str]] = None,
         change_summary: Optional[str] = None,
         is_encrypted: bool = False,
+        bypass_owner_check: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """
         更新笔记
@@ -232,7 +233,7 @@ class NoteService:
         if not note:
             return None
 
-        if note.owner_id != user_id:
+        if note.owner_id != user_id and not bypass_owner_check:
             raise PermissionDeniedException(message="只能修改自己的笔记")
 
         # 准备更新数据
@@ -279,6 +280,7 @@ class NoteService:
         note_id: int,
         tenant_id: int,
         user_id: int,
+        bypass_owner_check: bool = False,
     ) -> bool:
         """
         软删除笔记
@@ -304,7 +306,7 @@ class NoteService:
         if not note:
             return False
 
-        if note.owner_id != user_id:
+        if note.owner_id != user_id and not bypass_owner_check:
             raise PermissionDeniedException(message="只能删除自己的笔记")
 
         note.is_deleted = True
@@ -435,6 +437,7 @@ class NoteService:
         note_id: int,
         tenant_id: int,
         user_id: int,
+        bypass_owner_check: bool = False,
     ) -> Dict[str, Any]:
         """
         生成笔记分享链接
@@ -460,7 +463,7 @@ class NoteService:
         if not note:
             raise NotFoundException(message="笔记不存在")
 
-        if note.owner_id != user_id:
+        if note.owner_id != user_id and not bypass_owner_check:
             raise PermissionDeniedException(message="只能分享自己的笔记")
 
         # 生成分享码

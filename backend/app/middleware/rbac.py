@@ -160,6 +160,10 @@ class RBACMiddleware(BaseHTTPMiddleware):
             )
 
         # 尝试从缓存获取用户权限
+        # Super administrators bypass all path-based role restrictions.
+        if user_role == "super_admin":
+            return await call_next(request)
+
         if user_id:
             cache_key = f"user_perms:{user_id}"
             cached_perms = permission_cache.get(cache_key)

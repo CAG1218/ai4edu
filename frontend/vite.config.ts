@@ -8,21 +8,14 @@ export default defineConfig({
   plugins: [
     vue(),
     VitePWA({
+      /** 使用项目自定义的 Service Worker */
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       /** 是否启用 PWA（开发模式默认关闭） */
       disabled: process.env.NODE_ENV === 'development',
       /** Service Worker 注册类型 */
       registerType: 'autoUpdate',
-      /** Workbox 构建配置 */
-      workbox: {
-        /** 自定义 SW 源文件路径 */
-        swSrc: resolve(__dirname, 'src/sw.ts'),
-        /** 输出 SW 文件名 */
-        swDest: resolve(__dirname, 'dist/sw.js'),
-        /** 不自动清理过期缓存（由 SW 自行管理） */
-        cleanupOutdatedCaches: true,
-        /** 跳过等待并立即激活 */
-        skipWaiting: true,
-      },
       /** Web App Manifest 配置 */
       manifest: {
         name: 'AI4Edu - 智慧教学平台',
@@ -133,10 +126,11 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          vue: ['vue', 'vue-router', 'pinia'],
-          elementPlus: ['element-plus'],
-          echarts: ['echarts', 'vue-echarts'],
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (/node_modules\/(vue|vue-router|pinia)\//.test(id)) return 'vue'
+          if (id.includes('node_modules/element-plus/')) return 'elementPlus'
+          if (/node_modules\/(echarts|vue-echarts)\//.test(id)) return 'echarts'
         },
       },
     },

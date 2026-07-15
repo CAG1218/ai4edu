@@ -295,9 +295,13 @@ export async function syncOfflineNotes(): Promise<{
 
   for (const note of unsyncedNotes) {
     try {
-      const response = await fetch('/api/v1/notes', {
+      const accessToken = localStorage.getItem('access_token')
+      const response = await fetch('/api/v1/notes/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+        },
         body: JSON.stringify({
           title: note.title,
           content: note.content,

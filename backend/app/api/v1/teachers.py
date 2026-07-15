@@ -127,6 +127,7 @@ async def update_lesson_plan(
         materials=plan_data.materials,
         duration_minutes=plan_data.duration_minutes,
         status=plan_data.status,
+        bypass_owner_check=current_user.role == "super_admin",
     )
     if not result:
         raise HTTPException(status_code=404, detail="教案不存在或无权修改")
@@ -145,6 +146,7 @@ async def delete_lesson_plan(
         plan_id=plan_id,
         tenant_id=current_user.tenant_id or 0,
         teacher_id=current_user.id,
+        bypass_owner_check=current_user.role == "super_admin",
     )
     if not success:
         raise HTTPException(status_code=404, detail="教案不存在")

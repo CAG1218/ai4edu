@@ -181,13 +181,16 @@ async def seed_data():
     # 创建所有表（仅 PostgreSQL 表，跳过 ClickHouse 等外部数据库的表）
     print("创建数据库表...")
     try:
+        postgres_tables = [
+            table for table in Base.metadata.sorted_tables if table.schema is None
+        ]
         async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(Base.metadata.create_all, tables=postgres_tables)
         print("数据库表创建完成")
     except Exception as e:
         err_msg = str(e).lower()
         if "clickhouse" in err_msg or "schema" in err_msg:
-            print(f"⚠️ 跳过非 PostgreSQL 表创建（{type(e).__name__}），继续初始化数据...")
+            print(f"[WARN] 跳过非 PostgreSQL 表创建（{type(e).__name__}），继续初始化数据...")
         else:
             raise
     print("数据库表就绪")

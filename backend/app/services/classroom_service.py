@@ -238,6 +238,7 @@ class ClassroomService:
         options: List[str],
         poll_type: str = "single",
         is_anonymous: bool = False,
+        bypass_owner_check: bool = False,
     ) -> Dict[str, Any]:
         """
         发起课堂投票
@@ -261,7 +262,7 @@ class ClassroomService:
         if not classroom:
             raise NotFoundException(message="课堂不存在")
 
-        if classroom.teacher_id != teacher_id:
+        if classroom.teacher_id != teacher_id and not bypass_owner_check:
             raise PermissionDeniedException(message="只有教师可以发起投票")
 
         poll = ClassroomPoll(
@@ -399,6 +400,7 @@ class ClassroomService:
         self,
         classroom_id: int,
         teacher_id: int,
+        bypass_owner_check: bool = False,
     ) -> bool:
         """
         结束课堂
@@ -417,7 +419,7 @@ class ClassroomService:
         if not classroom:
             raise NotFoundException(message="课堂不存在")
 
-        if classroom.teacher_id != teacher_id:
+        if classroom.teacher_id != teacher_id and not bypass_owner_check:
             raise PermissionDeniedException(message="只有教师可以结束课堂")
 
         classroom.status = "ended"

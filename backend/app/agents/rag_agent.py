@@ -102,9 +102,15 @@ class RAGAgent(BaseAgent):
     ) -> Dict[str, Any]:
         """执行混合检索"""
         try:
-            results = await search_service.hybrid_search(
+            safe_context = context or {}
+            course_ids = safe_context.get("course_ids") or (
+                [safe_context["course_id"]] if safe_context.get("course_id") else []
+            )
+            results = await search_service.index_search(
                 query=query,
-                search_type="all",
+                tenant_id=int(safe_context.get("tenant_id", 0)),
+                user_id=int(safe_context.get("user_id", 0)),
+                course_ids=course_ids,
                 limit=10,
             )
             return results

@@ -82,13 +82,13 @@ export const noteApi = {
     search?: string
     course_id?: number
   }): Promise<PaginatedNotes> {
-    const response = await api.get('/notes', { params })
+    const response = await api.get('/notes/', { params })
     return response.data as PaginatedNotes
   },
 
   /** 创建笔记 */
   async createNote(params: CreateNoteParams): Promise<NoteDetail> {
-    const response = await api.post('/notes', params)
+    const response = await api.post('/notes/', params)
     return response.data as NoteDetail
   },
 
