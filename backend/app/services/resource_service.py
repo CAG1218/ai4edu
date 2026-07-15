@@ -144,6 +144,7 @@ class ResourceService:
             ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "other"
             type_map = {
                 "pdf": "pdf", "docx": "docx", "doc": "docx",
+                "txt": "txt", "md": "txt", "rtf": "txt",
                 "pptx": "pptx", "ppt": "pptx",
                 "mp4": "video", "avi": "video", "mov": "video",
                 "mp3": "audio", "wav": "audio",
@@ -207,12 +208,37 @@ class ResourceService:
 
         return {
             "id": resource.id,
+            "tenant_id": resource.tenant_id,
             "title": resource.title,
             "resource_type": resource.resource_type,
             "file_size": resource.file_size,
             "file_key": resource.file_key,
             "created_at": resource.created_at.isoformat() if resource.created_at else None,
         }
+
+    async def create_link_resource(
+        self,
+        url: str,
+        title: str,
+        uploader_id: int,
+        tenant_id: Optional[int],
+        description: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create a web-link resource without uploading a file."""
+        resource = await self.repo.create(
+            {
+                "title": title,
+                "description": description or "",
+                "resource_type": "link",
+                "mime_type": "text/uri-list",
+                "url": url,
+                "tenant_id": tenant_id or 0,
+                "uploader_id": uploader_id,
+                "is_public": False,
+                "is_active": True,
+            }
+        )
+        return await self.get_resource_detail(resource.id) or {"id": resource.id, "title": title, "url": url}
 
     async def list_resources(
         self,
@@ -277,6 +303,7 @@ class ResourceService:
 
         return {
             "id": resource.id,
+            "tenant_id": resource.tenant_id,
             "title": resource.title,
             "description": resource.description,
             "resource_type": resource.resource_type,
@@ -336,6 +363,13 @@ class ResourceService:
             metadata["linked_nodes"] = linked_nodes
             await self.repo.update(resource_id, {"metadata_json": json.dumps(metadata, ensure_ascii=False)})
 
+        # Keep the Neo4j projection in sync so graph detail queries can see it.
+        from app.services.graph_service import graph_service
+
+        detail = await self.get_resource_detail(resource_id)
+        if detail:
+            await graph_service.link_resource(node_id, detail)
+
         return True
 
     async def unlink_from_node(self, resource_id: int, node_id: str) -> bool:
@@ -356,6 +390,10 @@ class ResourceService:
             linked_nodes.remove(node_id)
             metadata["linked_nodes"] = linked_nodes
             await self.repo.update(resource_id, {"metadata_json": json.dumps(metadata, ensure_ascii=False)})
+
+        from app.services.graph_service import graph_service
+
+        await graph_service.unlink_resource(node_id, resource_id)
 
         return True
 

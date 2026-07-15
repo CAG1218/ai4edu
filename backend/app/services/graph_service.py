@@ -220,7 +220,9 @@ class GraphService:
 
         # BFS 遍历邻居
         cypher = (
-            "MATCH path = (start:KnowledgeNode {id: $node_id})-[:RELATED*1..%d]-(neighbor:KnowledgeNode) "
+            "MATCH path = (start:KnowledgeNode {id: $node_id})-"
+            "[:RELATED|PREREQUISITE|APPLICATION|RECOMMENDS*1..%d]-"
+            "(neighbor:KnowledgeNode) "
             "RETURN DISTINCT neighbor, "
             "[rel in relationships(path) | {source: startNode(rel).id, target: endNode(rel).id, type: type(rel), label: rel.label}] AS rels "
             "LIMIT $limit"
@@ -258,6 +260,41 @@ class GraphService:
         )
         return [record["r"] for record in result]
 
+    async def link_resource(self, node_id: str, resource: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Create or refresh a resource projection in Neo4j and link it to a node."""
+        result = await self._run(
+            "MATCH (n:KnowledgeNode {id: $node_id}) "
+            "MERGE (r:Resource {id: $resource_id}) "
+            "SET r.title = $title, r.description = $description, "
+            "r.resource_type = $resource_type, r.mime_type = $mime_type, "
+            "r.file_size = $file_size, r.url = $url, r.preview_url = $preview_url, "
+            "r.uploader_id = $uploader_id, r.updated_at = $updated_at "
+            "MERGE (n)-[:HAS_RESOURCE]->(r) RETURN r",
+            {
+                "node_id": node_id,
+                "resource_id": str(resource.get("id")),
+                "title": resource.get("title", ""),
+                "description": resource.get("description") or "",
+                "resource_type": resource.get("resource_type", "other"),
+                "mime_type": resource.get("mime_type"),
+                "file_size": resource.get("file_size"),
+                "url": resource.get("url"),
+                "preview_url": resource.get("preview_url"),
+                "uploader_id": resource.get("uploader_id"),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        return result[0]["r"] if result else None
+
+    async def unlink_resource(self, node_id: str, resource_id: int) -> bool:
+        """Remove a resource association without deleting the shared resource node."""
+        await self._run(
+            "MATCH (:KnowledgeNode {id: $node_id})-[rel:HAS_RESOURCE]->"
+            "(:Resource {id: $resource_id}) DELETE rel",
+            {"node_id": node_id, "resource_id": str(resource_id)},
+        )
+        return True
+
     async def get_recommendations(self, node_id: str, limit: int = 10) -> List[Dict[str, Any]]:
         """
         获取推荐节点：基于同路径兄弟节点(50%) + 同学科相似节点(30%) + 跨学科关联节点(20%)
@@ -265,6 +302,23 @@ class GraphService:
         recommendations: List[Dict[str, Any]] = []
         seen_ids = {node_id}
         node_detail: Optional[Dict[str, Any]] = None
+
+        # Teacher-curated recommendations always come first.
+        manual_result = await self._run(
+            "MATCH (:KnowledgeNode {id: $node_id})-[r:RECOMMENDS]->(recommended:KnowledgeNode) "
+            "RETURN DISTINCT recommended, r.label AS reason LIMIT $limit",
+            {"node_id": node_id, "limit": limit},
+        )
+        for record in manual_result:
+            node = record["recommended"]
+            if node["id"] not in seen_ids:
+                node["_recommendation_reason"] = record.get("reason") or "教师推荐"
+                node["_manual_recommendation"] = True
+                recommendations.append(node)
+                seen_ids.add(node["id"])
+
+        if len(recommendations) >= limit:
+            return recommendations[:limit]
 
         # 1. 同路径上的兄弟节点（50%配额）
         sibling_limit = max(1, int(limit * 0.5))
@@ -388,12 +442,13 @@ class GraphService:
         if label:
             cypher = (
                 "MATCH (a:KnowledgeNode {id: $from_id}), (b:KnowledgeNode {id: $to_id}) "
-                f"CREATE (a)-[r:{rel_type} {{label: $label}}]->(b) RETURN type(r) AS rel_type, properties(r) AS props"
+                f"MERGE (a)-[r:{rel_type}]->(b) SET r.label = $label "
+                "RETURN type(r) AS rel_type, properties(r) AS props"
             )
         else:
             cypher = (
                 "MATCH (a:KnowledgeNode {id: $from_id}), (b:KnowledgeNode {id: $to_id}) "
-                f"CREATE (a)-[r:{rel_type}]->(b) RETURN type(r) AS rel_type, properties(r) AS props"
+                f"MERGE (a)-[r:{rel_type}]->(b) RETURN type(r) AS rel_type, properties(r) AS props"
             )
 
         result = await self._run(cypher, params)
@@ -790,6 +845,154 @@ class GraphService:
             "stats": stats,
         }
 
+    # ==================== Collaborative editing and review ====================
+
+    async def create_change_request(
+        self,
+        node_id: str,
+        change_type: str,
+        payload: Dict[str, Any],
+        submitted_by: int,
+        tenant_id: Optional[int],
+    ) -> Dict[str, Any]:
+        """Store a student edit as a pending Neo4j review request."""
+        request_id = "gcr_" + uuid.uuid4().hex[:12]
+        created_at = datetime.now(timezone.utc).isoformat()
+        result = await self._run(
+            "MATCH (n:KnowledgeNode {id: $node_id}) "
+            "CREATE (c:GraphChangeRequest {"
+            "id: $id, node_id: $node_id, change_type: $change_type, "
+            "payload_json: $payload_json, status: 'pending', submitted_by: $submitted_by, "
+            "tenant_id: $tenant_id, created_at: $created_at, updated_at: $created_at}) "
+            "CREATE (c)-[:TARGETS]->(n) RETURN c",
+            {
+                "id": request_id,
+                "node_id": node_id,
+                "change_type": change_type,
+                "payload_json": json.dumps(payload, ensure_ascii=False),
+                "submitted_by": submitted_by,
+                "tenant_id": tenant_id,
+                "created_at": created_at,
+            },
+        )
+        if not result:
+            raise ValueError("Knowledge node does not exist")
+        return self._deserialize_change_request(result[0]["c"])
+
+    @staticmethod
+    def _deserialize_change_request(item: Dict[str, Any]) -> Dict[str, Any]:
+        data = dict(item)
+        raw_payload = data.pop("payload_json", "{}")
+        try:
+            data["payload"] = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+        except (json.JSONDecodeError, TypeError):
+            data["payload"] = {}
+        return data
+
+    async def list_change_requests(
+        self,
+        status_filter: str = "pending",
+        node_id: Optional[str] = None,
+        tenant_id: Optional[int] = None,
+        submitted_by: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        conditions = ["c.status = $status"]
+        params: Dict[str, Any] = {"status": status_filter}
+        if node_id:
+            conditions.append("c.node_id = $node_id")
+            params["node_id"] = node_id
+        if tenant_id is not None:
+            conditions.append("c.tenant_id = $tenant_id")
+            params["tenant_id"] = tenant_id
+        if submitted_by is not None:
+            conditions.append("c.submitted_by = $submitted_by")
+            params["submitted_by"] = submitted_by
+        result = await self._run(
+            "MATCH (c:GraphChangeRequest) WHERE " + " AND ".join(conditions) +
+            " RETURN c ORDER BY c.created_at DESC",
+            params,
+        )
+        return [self._deserialize_change_request(record["c"]) for record in result]
+
+    async def get_change_request(self, request_id: str) -> Optional[Dict[str, Any]]:
+        result = await self._run(
+            "MATCH (c:GraphChangeRequest {id: $request_id}) RETURN c",
+            {"request_id": request_id},
+        )
+        return self._deserialize_change_request(result[0]["c"]) if result else None
+
+    async def finish_change_request(
+        self,
+        request_id: str,
+        status_value: str,
+        reviewer_id: int,
+        comment: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        result = await self._run(
+            "MATCH (c:GraphChangeRequest {id: $request_id}) "
+            "SET c.status = $status, c.reviewer_id = $reviewer_id, "
+            "c.review_comment = $comment, c.updated_at = $updated_at RETURN c",
+            {
+                "request_id": request_id,
+                "status": status_value,
+                "reviewer_id": reviewer_id,
+                "comment": comment,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        return self._deserialize_change_request(result[0]["c"]) if result else None
+
+    # ==================== Graph assignments ====================
+
+    async def create_graph_task(
+        self,
+        node_id: str,
+        data: Dict[str, Any],
+        assigned_by: int,
+        tenant_id: Optional[int],
+    ) -> Optional[Dict[str, Any]]:
+        task_id = "gt_" + uuid.uuid4().hex[:12]
+        result = await self._run(
+            "MATCH (n:KnowledgeNode {id: $node_id}) "
+            "CREATE (n)-[:HAS_TASK]->(t:GraphTask {"
+            "id: $task_id, name: $name, description: $description, type: $type, "
+            "status: 'pending', due_date: $due_date, source: 'teacher', "
+            "assigned_by: $assigned_by, tenant_id: $tenant_id, created_at: $created_at}) "
+            "RETURN t",
+            {
+                "node_id": node_id,
+                "task_id": task_id,
+                "name": data.get("name", ""),
+                "description": data.get("description", ""),
+                "type": data.get("type", "learning"),
+                "due_date": data.get("due_date"),
+                "assigned_by": assigned_by,
+                "tenant_id": tenant_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        return dict(result[0]["t"]) if result else None
+
+    async def get_graph_tasks(self, node_id: str, tenant_id: Optional[int]) -> List[Dict[str, Any]]:
+        result = await self._run(
+            "MATCH (:KnowledgeNode {id: $node_id})-[:HAS_TASK]->(t:GraphTask) "
+            "WHERE $tenant_id IS NULL OR t.tenant_id = $tenant_id RETURN t ORDER BY t.created_at DESC",
+            {"node_id": node_id, "tenant_id": tenant_id},
+        )
+        return [
+            {
+                "task_id": record["t"].get("id"),
+                "name": record["t"].get("name", ""),
+                "description": record["t"].get("description", ""),
+                "type": record["t"].get("type", "learning"),
+                "status": record["t"].get("status", "pending"),
+                "due_date": record["t"].get("due_date"),
+                "source": record["t"].get("source", "teacher"),
+                "assigned_by": record["t"].get("assigned_by"),
+            }
+            for record in result
+        ]
+
     # ==================== 任务查询 ====================
 
     async def get_node_tasks(
@@ -797,6 +1000,7 @@ class GraphService:
         node_id: str,
         db_session: AsyncSession,
         user_id: Optional[int] = None,
+        tenant_id: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         获取节点关联任务
@@ -824,7 +1028,7 @@ class GraphService:
         result = await db_session.execute(query)
         diagnoses = result.scalars().all()
 
-        tasks: List[Dict[str, Any]] = []
+        tasks: List[Dict[str, Any]] = await self.get_graph_tasks(node_id, tenant_id)
         for diag in diagnoses:
             # 映射诊断状态到任务状态
             status_map = {

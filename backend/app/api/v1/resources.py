@@ -6,15 +6,22 @@ import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, status
+from pydantic import BaseModel, Field, HttpUrl
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, require_role
 from app.models.user import User
 from app.schemas.common import APIResponse, PaginationParams
 from app.services.resource_service import ResourceService
 
 router = APIRouter()
+
+
+class LinkResourceCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=300)
+    url: HttpUrl
+    description: Optional[str] = Field(None, max_length=2000)
 
 
 @router.post("/upload", summary="上传资源")
@@ -45,6 +52,24 @@ async def upload_resource(
         course_id=course_id,
     )
     return APIResponse(data=result, message="上传成功")
+
+
+@router.post("/link", summary="创建网页链接资源")
+async def create_link_resource(
+    body: LinkResourceCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """Create a resource backed by an HTTPS/HTTP web link."""
+    service = ResourceService(db)
+    result = await service.create_link_resource(
+        url=str(body.url),
+        title=body.title,
+        description=body.description,
+        uploader_id=current_user.id,
+        tenant_id=current_user.tenant_id,
+    )
+    return APIResponse(data=result, message="链接资源创建成功")
 
 
 @router.get("/list", summary="获取资源列表")
@@ -87,7 +112,7 @@ async def update_resource(
     description: Optional[str] = Query(None, description="资源描述"),
     tags: Optional[str] = Query(None, description="标签JSON数组"),
     is_public: Optional[bool] = Query(None, description="是否公开"),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_role(["teacher", "admin", "super_admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """更新资源元信息"""
@@ -102,6 +127,11 @@ async def update_resource(
         update_data["is_public"] = is_public
 
     service = ResourceService(db)
+    existing = await service.get_resource_detail(resource_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="资源不存在")
+    if current_user.role != "super_admin" and existing.get("tenant_id") != current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="不能编辑其他租户的资源")
     result = await service.update_resource(resource_id, update_data)
     if not result:
         raise HTTPException(status_code=404, detail="资源不存在")
@@ -126,10 +156,16 @@ async def delete_resource(
 async def link_to_node(
     resource_id: int,
     node_id: str = Query(..., description="知识节点ID"),
+    current_user: User = Depends(require_role(["teacher", "admin", "super_admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """关联资源到知识节点"""
     service = ResourceService(db)
+    existing = await service.get_resource_detail(resource_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="资源不存在")
+    if current_user.role != "super_admin" and existing.get("tenant_id") != current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="不能关联其他租户的资源")
     success = await service.link_to_node(resource_id, node_id)
     if not success:
         raise HTTPException(status_code=404, detail="资源不存在")
@@ -140,10 +176,16 @@ async def link_to_node(
 async def unlink_from_node(
     resource_id: int,
     node_id: str,
+    current_user: User = Depends(require_role(["teacher", "admin", "super_admin"])),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """取消关联资源到知识节点"""
     service = ResourceService(db)
+    existing = await service.get_resource_detail(resource_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="资源不存在")
+    if current_user.role != "super_admin" and existing.get("tenant_id") != current_user.tenant_id:
+        raise HTTPException(status_code=403, detail="不能取消其他租户的资源关联")
     success = await service.unlink_from_node(resource_id, node_id)
     if not success:
         raise HTTPException(status_code=404, detail="资源或关联不存在")

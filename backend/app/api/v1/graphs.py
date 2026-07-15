@@ -2,6 +2,7 @@
 AI4Edu 知识图谱 API
 提供图谱广场、节点查询、邻居遍历、推荐、misconception管理、跨学科图谱、任务查询等端点
 """
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -15,14 +16,115 @@ from app.schemas.graph import (
     MisconceptionCreate,
     MisconceptionUpdate,
     AutoSuggestResponse,
+    GraphChangeCreate,
+    GraphReviewAction,
+    GraphTaskCreate,
 )
 from app.services.graph_service import graph_service
+from app.services.resource_service import ResourceService
 from app.agents.anti_misconception_agent import AntiMisconceptionAgent
 
 router = APIRouter()
 
 # AntiMisconception Agent 实例（用于 AI 辅助标注）
 _anti_mc_agent = AntiMisconceptionAgent()
+
+EDITOR_ROLES = {"teacher", "admin", "super_admin"}
+
+
+async def _apply_graph_change(
+    node_id: str,
+    change_type: str,
+    payload: dict,
+    db: AsyncSession,
+    tenant_id: Optional[int] = None,
+) -> dict:
+    """Apply one validated collaborative-edit operation."""
+    if not await graph_service.get_node_detail(node_id):
+        raise HTTPException(status_code=404, detail="知识节点不存在")
+
+    if change_type == "overview":
+        update_data = {
+            key: payload[key]
+            for key in ("name", "description")
+            if key in payload and payload[key] is not None
+        }
+        if not update_data:
+            raise HTTPException(status_code=400, detail="概览没有可更新内容")
+        return await graph_service.update_node(node_id, update_data) or {}
+
+    if change_type == "cognitive":
+        levels = payload.get("cognitive_level")
+        if not isinstance(levels, dict):
+            raise HTTPException(status_code=400, detail="认知目标格式错误")
+        allowed = {"remember", "understand", "apply", "analyze", "evaluate", "create"}
+        clean_levels = {
+            key: max(0, min(100, float(value)))
+            for key, value in levels.items()
+            if key in allowed
+        }
+        if set(clean_levels) != allowed:
+            raise HTTPException(status_code=400, detail="请完整填写六项认知目标")
+        result = await graph_service.update_node(
+            node_id, {"cognitive_level": json.dumps(clean_levels, ensure_ascii=False)}
+        )
+        return result or {}
+
+    if change_type in {"relationship", "recommendation"}:
+        target_id = str(payload.get("target_id", "")).strip()
+        if not target_id or target_id == node_id:
+            raise HTTPException(status_code=400, detail="请选择其他知识节点")
+        rel_type = "RECOMMENDS" if change_type == "recommendation" else str(payload.get("rel_type", "RELATED"))
+        if rel_type not in {"RELATED", "PREREQUISITE", "APPLICATION", "RECOMMENDS"}:
+            raise HTTPException(status_code=400, detail="不支持的关系类型")
+        result = await graph_service.create_relationship(node_id, target_id, rel_type, payload.get("label"))
+        if not result:
+            raise HTTPException(status_code=400, detail="目标知识节点不存在")
+        return result
+
+    if change_type in {"relationship_delete", "recommendation_delete"}:
+        target_id = str(payload.get("target_id", "")).strip()
+        rel_type = "RECOMMENDS" if change_type == "recommendation_delete" else str(payload.get("rel_type", "RELATED"))
+        await graph_service.delete_relationship(node_id, target_id, rel_type)
+        return {"deleted": True}
+
+    resource_service = ResourceService(db)
+    if change_type in {"resource_link", "resource_update"}:
+        try:
+            resource_id = int(payload.get("resource_id"))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="资源ID无效")
+
+        resource = await resource_service.get_resource_detail(resource_id)
+        if not resource:
+            raise HTTPException(status_code=404, detail="资源不存在")
+        if tenant_id is not None and resource.get("tenant_id") != tenant_id:
+            raise HTTPException(status_code=403, detail="不能编辑其他租户的资源")
+
+        if change_type == "resource_update":
+            allowed_fields = {"title", "description", "tags", "is_public"}
+            update_data = {key: value for key, value in payload.items() if key in allowed_fields}
+            if not update_data:
+                raise HTTPException(status_code=400, detail="资源没有可更新内容")
+            await resource_service.update_resource(resource_id, update_data)
+            resource = await resource_service.get_resource_detail(resource_id) or resource
+        linked = await graph_service.link_resource(node_id, resource)
+        return linked or {}
+
+    if change_type == "resource_unlink":
+        try:
+            resource_id = int(payload.get("resource_id"))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="资源ID无效")
+        resource = await resource_service.get_resource_detail(resource_id)
+        if not resource:
+            raise HTTPException(status_code=404, detail="资源不存在")
+        if tenant_id is not None and resource.get("tenant_id") != tenant_id:
+            raise HTTPException(status_code=403, detail="不能编辑其他租户的资源")
+        await graph_service.unlink_resource(node_id, resource_id)
+        return {"unlinked": True}
+
+    raise HTTPException(status_code=400, detail="不支持的修改类型")
 
 
 @router.get("/square", summary="图谱广场")
@@ -188,6 +290,90 @@ async def search_nodes(
     return APIResponse(data=results)
 
 
+# ==================== 协作编辑与教师审核 ====================
+
+@router.post("/nodes/{node_id}/changes", summary="提交图谱详情修改")
+async def submit_graph_change(
+    node_id: str,
+    body: GraphChangeCreate,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """Teachers/admins apply immediately; student changes enter the review queue."""
+    if user.role in EDITOR_ROLES:
+        applied = await _apply_graph_change(
+            node_id,
+            body.change_type,
+            body.payload,
+            db,
+            None if user.role == "super_admin" else user.tenant_id,
+        )
+        return APIResponse(
+            data={"status": "approved", "applied": applied},
+            message="修改已生效",
+        )
+
+    request = await graph_service.create_change_request(
+        node_id=node_id,
+        change_type=body.change_type,
+        payload=body.payload,
+        submitted_by=user.id,
+        tenant_id=user.tenant_id,
+    )
+    return APIResponse(
+        data=request,
+        message="修改已提交，等待教师审核",
+    )
+
+
+@router.get("/change-requests", summary="获取图谱修改审核列表")
+async def list_graph_change_requests(
+    status_filter: str = Query("pending", alias="status"),
+    node_id: Optional[str] = Query(None),
+    user: User = Depends(get_current_user),
+) -> APIResponse:
+    if status_filter not in {"pending", "approved", "rejected"}:
+        raise HTTPException(status_code=400, detail="审核状态无效")
+    requests = await graph_service.list_change_requests(
+        status_filter=status_filter,
+        node_id=node_id,
+        tenant_id=user.tenant_id if user.role != "super_admin" else None,
+        submitted_by=None if user.role in EDITOR_ROLES else user.id,
+    )
+    return APIResponse(data=requests)
+
+
+@router.post("/change-requests/{request_id}/review", summary="审核图谱修改")
+async def review_graph_change(
+    request_id: str,
+    body: GraphReviewAction,
+    user: User = Depends(require_role(["teacher", "admin", "super_admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    request = await graph_service.get_change_request(request_id)
+    if not request:
+        raise HTTPException(status_code=404, detail="审核申请不存在")
+    if request.get("status") != "pending":
+        raise HTTPException(status_code=409, detail="该申请已经审核")
+    if user.role != "super_admin" and request.get("tenant_id") != user.tenant_id:
+        raise HTTPException(status_code=403, detail="不能审核其他租户的申请")
+
+    applied = None
+    new_status = "approved" if body.approved else "rejected"
+    if body.approved:
+        applied = await _apply_graph_change(
+            request["node_id"], request["change_type"], request.get("payload", {}), db,
+            request.get("tenant_id"),
+        )
+    updated = await graph_service.finish_change_request(
+        request_id, new_status, user.id, body.comment
+    )
+    return APIResponse(
+        data={"request": updated, "applied": applied},
+        message="审核通过，修改已生效" if body.approved else "申请已驳回",
+    )
+
+
 # ==================== Misconception 端点 ====================
 
 @router.get("/nodes/{node_id}/misconceptions", summary="获取节点误解标注")
@@ -282,8 +468,27 @@ async def get_node_tasks(
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     """获取节点关联的学习任务（全体用户可访问）"""
-    tasks = await graph_service.get_node_tasks(node_id, db, user_id=user.id)
+    tasks = await graph_service.get_node_tasks(
+        node_id, db, user_id=user.id, tenant_id=user.tenant_id
+    )
     return APIResponse(data=tasks)
+
+
+@router.post("/nodes/{node_id}/tasks", summary="布置知识点任务")
+async def create_node_task(
+    node_id: str,
+    body: GraphTaskCreate,
+    user: User = Depends(require_role(["teacher", "admin", "super_admin"])),
+) -> APIResponse:
+    task = await graph_service.create_graph_task(
+        node_id=node_id,
+        data=body.model_dump(mode="json"),
+        assigned_by=user.id,
+        tenant_id=user.tenant_id,
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="知识节点不存在")
+    return APIResponse(data=task, message="任务已布置")
 
 
 # ==================== 跨学科图谱端点 ====================

@@ -128,7 +128,38 @@ export interface NodeTask {
   type: 'learning' | 'review' | 'diagnosis'
   status: 'pending' | 'in_progress' | 'completed'
   due_date: string | null
-  source: 'course' | 'diagnosis'
+  source: 'course' | 'diagnosis' | 'teacher'
+  description?: string
+  assigned_by?: number
+}
+
+export type GraphChangeType =
+  | 'overview'
+  | 'cognitive'
+  | 'relationship'
+  | 'relationship_delete'
+  | 'recommendation'
+  | 'recommendation_delete'
+  | 'resource_link'
+  | 'resource_update'
+  | 'resource_unlink'
+
+export interface GraphChangeRequest {
+  id: string
+  node_id: string
+  change_type: GraphChangeType
+  payload: Record<string, unknown>
+  status: 'pending' | 'approved' | 'rejected'
+  submitted_by: number
+  reviewer_id?: number
+  review_comment?: string
+  created_at: string
+}
+
+export interface GraphChangeResult {
+  status: 'approved' | 'pending'
+  applied?: unknown
+  id?: string
 }
 
 // ============ API 方法 ============
@@ -247,6 +278,41 @@ export const graphApi = {
   /** 获取节点关联任务 */
   async getNodeTasks(nodeId: string): Promise<NodeTask[]> {
     const response = await api.get(`/graphs/nodes/${nodeId}/tasks`)
+    return response.data
+  },
+
+  /** Submit a graph edit. Teacher/admin edits apply immediately; student edits await review. */
+  async submitChange(
+    nodeId: string,
+    changeType: GraphChangeType,
+    payload: Record<string, unknown>,
+  ): Promise<GraphChangeResult> {
+    const response = await api.post(`/graphs/nodes/${nodeId}/changes`, {
+      change_type: changeType,
+      payload,
+    })
+    return response.data
+  },
+
+  async getChangeRequests(
+    nodeId?: string,
+    status: 'pending' | 'approved' | 'rejected' = 'pending',
+  ): Promise<GraphChangeRequest[]> {
+    const response = await api.get('/graphs/change-requests', {
+      params: { node_id: nodeId, status },
+    })
+    return response.data
+  },
+
+  async reviewChange(requestId: string, approved: boolean, comment?: string): Promise<void> {
+    await api.post(`/graphs/change-requests/${requestId}/review`, { approved, comment })
+  },
+
+  async createNodeTask(
+    nodeId: string,
+    data: { name: string; description?: string; type: NodeTask['type']; due_date?: string },
+  ): Promise<NodeTask> {
+    const response = await api.post(`/graphs/nodes/${nodeId}/tasks`, data)
     return response.data
   },
 

@@ -5,6 +5,15 @@
         <el-icon><ArrowLeft /></el-icon> 返回广场
       </el-button>
       <h2>{{ currentSubject?.name || id }}</h2>
+      <div class="graph-detail__header-actions">
+        <span v-if="graphStore.currentGraph" class="graph-detail__selected-node">
+          当前知识点：{{ graphStore.currentGraph.name }}
+        </span>
+        <el-button type="primary" :disabled="!graphStore.currentGraph" @click="editorVisible = true">
+          <el-icon><Edit /></el-icon>
+          协作编辑
+        </el-button>
+      </div>
     </div>
 
     <el-tabs v-model="activeTab" type="border-card">
@@ -170,6 +179,16 @@
       @suggest="handleSuggestMc"
       @close="mcDialogVisible = false"
     />
+
+    <GraphEditDrawer
+      v-if="graphStore.currentGraph"
+      v-model="editorVisible"
+      :node="graphStore.currentGraph"
+      :direct-apply="isTeacher"
+      :can-review="isTeacher"
+      :can-assign-task="isTeacher"
+      @changed="handleEditorChanged"
+    />
   </div>
 </template>
 
@@ -181,7 +200,7 @@
  */
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft } from '@element-plus/icons-vue'
+import { ArrowLeft, Edit } from '@element-plus/icons-vue'
 import { useGraphStore } from '@/stores/graph'
 import { useAuthStore } from '@/stores/auth'
 import { graphApi } from '@/services/graph'
@@ -189,6 +208,7 @@ import ForceGraph from '@/components/graph/ForceGraph.vue'
 import NodeCard from '@/components/graph/NodeCard.vue'
 import LinkInfo from '@/components/graph/LinkInfo.vue'
 import MisconceptionDialog from '@/components/graph/MisconceptionDialog.vue'
+import GraphEditDrawer from '@/components/graph/GraphEditDrawer.vue'
 import type { KnowledgeNode, GraphLink, MisconceptionInput } from '@/services/graph'
 
 const route = useRoute()
@@ -205,6 +225,7 @@ const recommendations = ref<KnowledgeNode[]>([])
 const selectedLink = ref<GraphLink | null>(null)
 const radarRef = ref<HTMLDivElement | null>(null)
 const mcDialogVisible = ref<boolean>(false)
+const editorVisible = ref<boolean>(false)
 
 const isTeacher = computed(() => authStore.isTeacher || authStore.isAdmin)
 
@@ -285,6 +306,21 @@ async function selectNode(node: KnowledgeNode): Promise<void> {
   await graphStore.loadNodeTasks(node.id)
   // 加载该节点的误解标注
   await graphStore.loadMisconceptions(node.id)
+}
+
+async function handleEditorChanged(): Promise<void> {
+  if (!selectedNodeId.value) return
+  const nodeId = selectedNodeId.value
+  await Promise.all([
+    graphStore.loadNodeDetail(nodeId),
+    graphStore.loadNeighbors(nodeId, 1, 50),
+    loadNodeResources(nodeId),
+    loadRecommendations(nodeId),
+    graphStore.loadNodeTasks(nodeId),
+    graphStore.loadSquareStats(),
+  ])
+  await nextTick()
+  await renderCognitiveRadar(nodeId)
 }
 
 async function loadNodeResources(nodeId: string): Promise<void> {
@@ -440,9 +476,13 @@ watch(activeTab, async (tab) => {
   }
 })
 
-onMounted(() => {
+onMounted(async () => {
   if (!graphStore.squareStats.length) {
-    graphStore.loadSquareStats()
+    await graphStore.loadSquareStats()
+  }
+  await graphStore.searchNodes('', id.value)
+  if (graphStore.searchResults.length > 0 && !selectedNodeId.value) {
+    await selectNode(graphStore.searchResults[0])
   }
 })
 </script>
@@ -460,6 +500,18 @@ onMounted(() => {
       font-weight: 700;
       color: var(--color-text-primary);
     }
+  }
+
+  &__header-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  &__selected-node {
+    color: var(--color-text-secondary);
+    font-size: 13px;
   }
 
   &__search-section {

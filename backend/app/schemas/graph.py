@@ -141,3 +141,34 @@ class CognitiveGoalResponse(BaseModel):
     values: List[float]
     subject_avg: Optional[List[float]] = None
     node_name: str
+
+
+# ========== Collaborative graph editing ==========
+
+class GraphChangeCreate(BaseModel):
+    """A graph change that is applied directly or sent for teacher review."""
+
+    change_type: Literal[
+        "overview",
+        "cognitive",
+        "relationship",
+        "relationship_delete",
+        "recommendation",
+        "recommendation_delete",
+        "resource_link",
+        "resource_update",
+        "resource_unlink",
+    ]
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphReviewAction(BaseModel):
+    approved: bool
+    comment: Optional[str] = Field(None, max_length=500)
+
+
+class GraphTaskCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str = Field(default="", max_length=2000)
+    type: Literal["learning", "review", "diagnosis"] = "learning"
+    due_date: Optional[datetime] = None
