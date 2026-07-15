@@ -178,7 +178,7 @@ async def delete_relationship(
 
 @router.get("/search", summary="搜索知识节点")
 async def search_nodes(
-    q: str = Query(..., min_length=1, description="搜索关键词"),
+    q: str = Query("", description="搜索关键词；为空时按学科列出节点"),
     subject: Optional[str] = Query(None, description="学科筛选"),
     limit: int = Query(20, ge=1, le=100, description="返回数量"),
     user: User = Depends(get_current_user),
