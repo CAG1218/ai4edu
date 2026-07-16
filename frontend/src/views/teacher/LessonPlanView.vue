@@ -5,6 +5,31 @@
       <p class="lesson-plan__subtitle">输入课程目标，AI帮你生成完整教案</p>
     </div>
 
+    <div class="lesson-plan__saved">
+      <div class="lesson-plan__saved-header">
+        <h3>已保存教案</h3>
+        <span>点击教案图标可在当前页面查看</span>
+      </div>
+      <div v-if="savedPlans.length" class="lesson-plan__saved-list">
+        <button
+          v-for="plan in savedPlans"
+          :key="plan.id"
+          :class="['lesson-plan__saved-card', { 'lesson-plan__saved-card--active': savedPlanId === plan.id }]"
+          @click="openSavedPlan(plan.id)"
+        >
+          <span class="lesson-plan__saved-icon"><el-icon><Document /></el-icon></span>
+          <span class="lesson-plan__saved-info">
+            <strong>{{ plan.title }}</strong>
+            <small>{{ formatSavedTime(plan.updated_at) }}</small>
+          </span>
+          <el-tag size="small" :type="plan.ai_generated ? 'primary' : 'info'">
+            {{ plan.ai_generated ? 'AI 教案' : '教案' }}
+          </el-tag>
+        </button>
+      </div>
+      <el-empty v-else description="尚未保存教案" :image-size="54" />
+    </div>
+
     <div class="lesson-plan__body">
       <!-- 左侧：输入+生成 -->
       <div class="lesson-plan__input-panel">
@@ -70,7 +95,7 @@
             <h3>{{ generatedPlan.title }}</h3>
             <div class="lesson-plan__result-actions">
               <el-button size="small" @click="editPlan">编辑</el-button>
-              <el-button size="small" type="primary" @click="savePlan">保存教案</el-button>
+              <el-button size="small" type="primary" :loading="saving" @click="savePlan">保存教案</el-button>
             </div>
           </div>
           <div class="lesson-plan__result-content">
@@ -125,15 +150,18 @@
  * AI4Edu 备课助手页
  * 左侧输入+AI生成 + 右侧教案预览 + 底部资源推荐
  */
-import { ref, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { MagicStick, Document, Loading } from '@element-plus/icons-vue'
 import api from '@/services/api'
 
 const router = useRouter()
+const route = useRoute()
+const courseId = ref<number | null>(null)
 
 const generating = ref<boolean>(false)
+const saving = ref<boolean>(false)
 
 const planForm = reactive({
   courseName: '',
@@ -156,7 +184,24 @@ interface GeneratedPlan {
   homework: string[]
 }
 
+interface SavedPlan {
+  id: number
+  title: string
+  course_id: number
+  duration_minutes: number
+  ai_generated: boolean
+  updated_at: string
+}
+
+interface SavedPlanDetail extends SavedPlan {
+  objectives: string[]
+  content: string | null
+  materials: string[]
+}
+
 const generatedPlan = ref<GeneratedPlan | null>(null)
+const savedPlans = ref<SavedPlan[]>([])
+const savedPlanId = ref<number | null>(null)
 
 const recommendedResources = ref([
   { id: 1, title: '微积分基础教程', type: 'PDF文档' },
@@ -172,8 +217,9 @@ async function generatePlan(): Promise<void> {
   }
 
   generating.value = true
+  savedPlanId.value = null
   try {
-    const response = await api.post('/teacher/lesson-plan/generate', {
+    const response = await api.post('/teachers/lesson-plans/generate-preview', {
       course_name: planForm.courseName,
       objectives: planForm.objectives,
       knowledge_points: planForm.knowledgePoints,
@@ -214,21 +260,170 @@ function editPlan(): void {
 }
 
 async function savePlan(): Promise<void> {
+  if (!generatedPlan.value) {
+    ElMessage.warning('请先生成教案')
+    return
+  }
+
+  saving.value = true
   try {
-    await api.post('/teacher/lesson-plan/save', generatedPlan.value)
+    const response = await api.post('/teachers/lesson-plans', {
+      course_id: courseId.value ?? undefined,
+      course_name: planForm.courseName.trim(),
+      title: generatedPlan.value.title,
+      objectives: generatedPlan.value.objectives,
+      content: JSON.stringify({
+        steps: generatedPlan.value.steps,
+        homework: generatedPlan.value.homework,
+      }),
+      materials: generatedPlan.value.homework,
+      duration_minutes: Number(planForm.duration),
+      ai_generated: true,
+    })
+    const saved = response.data as { id: number }
+    savedPlanId.value = saved.id
+    await loadSavedPlans()
     ElMessage.success('教案已保存')
-  } catch {
-    ElMessage.error('保存失败')
+  } catch (error) {
+    console.error('保存教案失败:', error)
+  } finally {
+    saving.value = false
   }
 }
 
 function goToResource(id: number): void {
   router.push({ name: 'ResourceDetail', params: { id } })
 }
+
+async function loadSavedPlans(): Promise<void> {
+  const response = await api.get('/teachers/lesson-plans', {
+    params: { page: 1, page_size: 50, course_id: courseId.value ?? undefined },
+  })
+  const data = response.data as { items: SavedPlan[] }
+  savedPlans.value = data.items ?? []
+}
+
+async function openSavedPlan(planId: number): Promise<void> {
+  try {
+    const response = await api.get(`/teachers/lesson-plans/${planId}`)
+    const plan = response.data as SavedPlanDetail
+    let steps: PlanStep[] = []
+    let homework: string[] = plan.materials ?? []
+
+    if (plan.content) {
+      try {
+        const content = JSON.parse(plan.content) as { steps?: PlanStep[]; homework?: string[] }
+        steps = content.steps ?? []
+        homework = content.homework ?? homework
+      } catch {
+        steps = [{ title: '教学内容', duration: plan.duration_minutes, content: plan.content }]
+      }
+    }
+
+    generatedPlan.value = {
+      title: plan.title,
+      objectives: plan.objectives ?? [],
+      steps,
+      homework,
+    }
+    courseId.value = plan.course_id
+    planForm.duration = String(plan.duration_minutes)
+    savedPlanId.value = plan.id
+    ElMessage.success('已打开保存的教案')
+  } catch (error) {
+    console.error('打开教案失败:', error)
+  }
+}
+
+function formatSavedTime(value: string): string {
+  if (!value) return ''
+  return new Date(value).toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+onMounted(async () => {
+  const routeCourseId = Number(route.params.id)
+  if (route.name === 'TeacherCourseDetail' && Number.isFinite(routeCourseId)) {
+    courseId.value = routeCourseId
+    planForm.courseName = String(route.query.name ?? '')
+  }
+  await loadSavedPlans()
+  if (route.name === 'TeacherLessonPlanDetail' && Number.isFinite(routeCourseId)) {
+    await openSavedPlan(routeCourseId)
+  }
+})
 </script>
 
 <style lang="scss" scoped>
 .lesson-plan {
+  &__saved {
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  }
+
+  &__saved-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 14px;
+
+    h3 { margin: 0; font-size: 16px; }
+    span { font-size: 12px; color: #909399; }
+  }
+
+  &__saved-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 12px;
+  }
+
+  &__saved-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    padding: 12px;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    background: #fafafa;
+    border: 1px solid #ebeef5;
+    border-radius: 10px;
+    transition: all 0.2s;
+
+    &:hover, &--active { border-color: #409eff; background: #ecf5ff; }
+  }
+
+  &__saved-icon {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    flex-shrink: 0;
+    color: #1976d2;
+    font-size: 22px;
+    background: #e3f2fd;
+    border-radius: 10px;
+  }
+
+  &__saved-info {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
+
+    strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+    small { color: #909399; }
+  }
+
   &__header {
     margin-bottom: 20px;
 

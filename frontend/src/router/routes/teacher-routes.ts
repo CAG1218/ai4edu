@@ -42,6 +42,15 @@ export const teacherRoutes: RouteRecordRaw[] = [
         },
       },
       {
+        path: 'courses/:id',
+        name: 'TeacherCourseDetail',
+        component: () => import('@/views/teacher/LessonPlanView.vue'),
+        meta: {
+          title: '课程备课',
+          requiresAuth: true,
+        },
+      },
+      {
         path: 'students',
         name: 'TeacherStudents',
         component: () => import('@/views/scene/DashboardView.vue'),
@@ -71,9 +80,18 @@ export const teacherRoutes: RouteRecordRaw[] = [
       {
         path: 'resources',
         name: 'TeacherResources',
-        component: () => import('@/views/scene/DashboardView.vue'),
+        component: () => import('@/views/resource/MyResourcesView.vue'),
         meta: {
           title: '资源管理',
+          requiresAuth: true,
+        },
+      },
+      {
+        path: 'ai-chat',
+        name: 'TeacherAIChat',
+        component: () => import('@/views/agent/AgentChatView.vue'),
+        meta: {
+          title: 'AI 对话',
           requiresAuth: true,
         },
       },

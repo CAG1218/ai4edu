@@ -19,12 +19,14 @@ router = APIRouter()
 class LessonPlanCreate(BaseModel):
     """创建教案请求"""
 
-    course_id: int = Field(..., description="课程ID")
+    course_id: Optional[int] = Field(None, description="课程ID")
+    course_name: Optional[str] = Field(None, description="课程名称；未提供课程ID时用于关联或创建课程")
     title: str = Field(..., description="教案标题", min_length=1, max_length=300)
     objectives: Optional[list[str]] = Field(None, description="教学目标")
     content: Optional[str] = Field(None, description="教案内容")
     materials: Optional[list[str]] = Field(None, description="教学材料")
     duration_minutes: int = Field(45, description="时长(分钟)")
+    ai_generated: bool = Field(False, description="是否由AI生成")
 
 
 class LessonPlanUpdate(BaseModel):
@@ -36,6 +38,16 @@ class LessonPlanUpdate(BaseModel):
     materials: Optional[list[str]] = Field(None, description="教学材料")
     duration_minutes: Optional[int] = Field(None, description="时长(分钟)")
     status: Optional[str] = Field(None, description="状态: draft/published/archived")
+
+
+class LessonPlanPreviewRequest(BaseModel):
+    """AI教案预览请求。"""
+
+    course_name: str = Field(..., min_length=1, max_length=200)
+    objectives: Optional[str] = None
+    knowledge_points: list[str] = Field(default_factory=list)
+    duration: int = Field(45, ge=10, le=300)
+    student_level: str = Field("intermediate", max_length=50)
 
 
 @router.get("/dashboard", summary="教师仪表盘")
@@ -70,6 +82,20 @@ async def list_lesson_plans(
     return APIResponse(code=0, data=result.model_dump(), message="success")
 
 
+@router.get("/courses", summary="获取教师课程列表")
+async def list_teacher_courses(
+    current_user: User = Depends(require_role(["teacher", "admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """获取当前教师维护的真实课程，供工作台和班级诊断使用。"""
+    service = TeacherService(db)
+    result = await service.list_courses(
+        tenant_id=current_user.tenant_id or 0,
+        teacher_id=current_user.id,
+    )
+    return APIResponse(code=0, data=result, message="success")
+
+
 @router.post("/lesson-plans", summary="创建教案")
 async def create_lesson_plan(
     plan_data: LessonPlanCreate,
@@ -78,15 +104,45 @@ async def create_lesson_plan(
 ) -> APIResponse:
     """创建新教案（支持AI辅助生成）"""
     service = TeacherService(db)
+    course_id = plan_data.course_id
+    if course_id is None:
+        if not plan_data.course_name or not plan_data.course_name.strip():
+            raise HTTPException(status_code=400, detail="课程ID和课程名称至少需要提供一项")
+        course_id = await service.get_or_create_course(
+            tenant_id=current_user.tenant_id or 0,
+            teacher_id=current_user.id,
+            course_name=plan_data.course_name.strip(),
+        )
     result = await service.create_lesson_plan(
         tenant_id=current_user.tenant_id or 0,
         teacher_id=current_user.id,
-        course_id=plan_data.course_id,
+        course_id=course_id,
         title=plan_data.title,
         objectives=plan_data.objectives,
         content=plan_data.content,
         materials=plan_data.materials,
         duration_minutes=plan_data.duration_minutes,
+        ai_generated=plan_data.ai_generated,
+    )
+    return APIResponse(code=0, data=result, message="success")
+
+
+@router.post("/lesson-plans/generate-preview", summary="AI生成教案预览")
+async def generate_lesson_plan_preview(
+    request: LessonPlanPreviewRequest,
+    current_user: User = Depends(require_role(["teacher", "admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """根据教师输入生成尚未保存的结构化教案预览。"""
+    service = TeacherService(db)
+    result = await service.generate_lesson_plan_preview(
+        course_name=request.course_name,
+        objectives=request.objectives,
+        knowledge_points=request.knowledge_points,
+        duration=request.duration,
+        student_level=request.student_level,
+        user_id=current_user.id,
+        tenant_id=current_user.tenant_id or 0,
     )
     return APIResponse(code=0, data=result, message="success")
 
