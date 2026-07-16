@@ -25,6 +25,7 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20), default="student", nullable=False, index=True, comment="角色: student/teacher/admin/super_admin")
     grade: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, comment="年级")
     school: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="学校")
+    major: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="专业")
     bio: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="个人简介")
     preferences: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="用户偏好(JSON)")
     default_scene: Mapped[str] = mapped_column(String(20), default="classroom", nullable=False, comment="默认场景")

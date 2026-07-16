@@ -3,9 +3,10 @@
     <div class="onboarding-layout__container">
       <!-- 顶部进度条 -->
       <div class="onboarding-layout__progress">
-        <el-steps :active="currentStep" :max="3" finish-status="success" simple>
+        <el-steps :active="currentStep" :max="4" finish-status="success" simple>
           <el-step title="选择角色" />
-          <el-step title="兴趣学科" />
+          <el-step title="所在专业" />
+          <el-step title="兴趣课程" />
           <el-step title="学习目标" />
         </el-steps>
       </div>
@@ -40,7 +41,7 @@ const route = useRoute()
 const authStore = useAuthStore()
 const userStore = useUserStore()
 
-const STEP_ROUTES = ['onboarding-role', 'onboarding-interests', 'onboarding-goal']
+const STEP_ROUTES = ['onboarding-role', 'onboarding-major', 'onboarding-interests', 'onboarding-goal']
 
 const currentStep = computed(() => {
   const name = route.name as string
@@ -55,6 +56,7 @@ async function handleSkip(): Promise<void> {
     if (userId) {
       await authApi.completeOnboarding(userId, {
         role: userStore.onboardingData.role || '',
+        major: userStore.onboardingData.major || '',
         interests: userStore.onboardingData.interests || [],
         goals: [],
       })

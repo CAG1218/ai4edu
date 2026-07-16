@@ -14,32 +14,62 @@ export enum SceneType {
 }
 
 /**
+ * 场景配置条目（扩展后）
+ */
+export interface SceneConfigEntry {
+  name: string
+  nameEn: string
+  icon: string
+  color: string
+  slogan: string           // 场景标语
+  description: string      // 场景描述
+  illustration: string     // 场景插画/图标标识（P0 用 Element Plus 图标名）
+  accentColor: string      // 辅助强调色
+}
+
+/**
  * 场景配置映射
  */
-export const SCENE_CONFIG: Record<SceneType, { name: string; nameEn: string; icon: string; color: string }> = {
+export const SCENE_CONFIG: Record<SceneType, SceneConfigEntry> = {
   [SceneType.CLASSROOM]: {
     name: '课堂模式',
     nameEn: 'Classroom',
     icon: 'School',
     color: '#1976D2',
+    slogan: '专注课堂，同步记录',
+    description: '实时课表、课堂互动、课后回顾一站式',
+    illustration: 'School',
+    accentColor: '#64B5F6',
   },
   [SceneType.SELF_STUDY]: {
     name: '自习模式',
     nameEn: 'Self Study',
     icon: 'Reading',
     color: '#388E3C',
+    slogan: '自主规划，高效学习',
+    description: '学习计划、知识图谱、闪卡记忆',
+    illustration: 'Reading',
+    accentColor: '#81C784',
   },
   [SceneType.EXAM]: {
     name: '考前模式',
     nameEn: 'Exam Prep',
     icon: 'EditPen',
     color: '#F57C00',
+    slogan: '冲刺备考，查漏补缺',
+    description: '倒计时、错题本、模拟考试、薄弱知识点',
+    illustration: 'EditPen',
+    accentColor: '#FFB74D',
   },
   [SceneType.DISCUSSION]: {
     name: '讨论模式',
     nameEn: 'Discussion',
     icon: 'ChatDotRound',
     color: '#7B1FA2',
+    slogan: '思想碰撞，协作共进',
+    description: '热门话题、互动讨论、协作白板',
+    illustration: 'ChatDotRound',
+    accentColor: '#BA68C8',
   },
 }
 

@@ -1,0 +1,57 @@
+sequenceDiagram
+    autonumber
+    participant U as 用户
+    participant SL as SceneLayout.vue
+    participant SS as useSceneStore
+    participant SA as sceneApi
+    participant R as Vue Router
+    participant DV as DashboardView.vue
+    participant SD as SceneDashboard<br/>(Classroom/SelfStudy/Exam/Discussion)
+    participant SWB as SceneWelcomeBanner
+    participant SC as 场景子组件
+    participant MD as scene-mock-data.ts
+
+    Note over U,MD: 阶段一：场景切换触发
+
+    U->>SL: 点击场景切换下拉框<br/>选择"考前模式"
+    SL->>SS: switchScene(SceneType.EXAM)
+    SS->>SA: POST /scenes/switch {scene_type: 'exam'}
+    SA-->>SS: {scene_type, scene_name, primary_color, layout_config, feature_flags, widgets}
+    SS->>SS: 更新 currentSceneType = 'exam'
+    SS->>SS: 更新 currentSceneConfig
+    SS->>SS: localStorage.setItem('current_scene', 'exam')
+    SS->>SS: applySceneTheme('#F57C00')
+    Note right of SS: 设置 CSS 变量<br/>--scene-primary-color 等
+
+    SL->>R: router.push('/scene/exam/dashboard')
+    R-->>DV: 路由匹配，渲染 DashboardView
+
+    Note over U,MD: 阶段二：DashboardView 分发
+
+    DV->>SS: 读取 currentSceneType
+    SS-->>DV: 'exam'
+    DV->>DV: dashboardComponent = computed(() => map['exam'] = ExamDashboard)
+    DV->>DV: <component :is={ExamDashboard} />
+
+    Note over U,MD: 阶段三：场景仪表盘渲染
+
+    SD->>MD: import { examMockData } from mock/scene-mock-data
+    MD-->>SD: {countdown, reviewProgress, wrongBookStats, weakPoints, toolbarActions}
+
+    SD->>SWB: <SceneWelcomeBanner :config={SCENE_CONFIG['exam']} />
+    SWB->>SWB: 渲染场景名称 + slogan + description<br/>背景应用 accentColor 渐变
+    SWB-->>SD: 横幅渲染完成
+
+    SD->>SC: 渲染 ExamCountdown / ReviewProgress / WrongBookSummary / WeakPointsTags
+    SC->>SC: 各组件消费 props 中的 mock 数据<br/>ReviewProgress 使用 vue-echarts 渲染环形图
+    SC-->>SD: 子组件渲染完成
+
+    SD-->>DV: 仪表盘渲染完成
+    DV-->>U: 用户看到考前模式专属仪表盘
+
+    Note over U,MD: 阶段四：场景内交互
+
+    U->>SC: 点击"错题重练"按钮
+    SC->>R: emit('action', {route: '/diagnosis'})
+    R->>R: router.push('/scene/exam/diagnosis')
+    R-->>U: 跳转到学习诊断页

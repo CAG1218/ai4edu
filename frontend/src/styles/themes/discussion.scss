@@ -9,6 +9,11 @@
   --scene-primary-bg: #F3E5F5;
   --scene-primary-bg-hover: #E1BEE7;
 
+  // 新增：场景横幅渐变、辅助强调色、卡片圆角
+  --scene-accent-color: #BA68C8;
+  --scene-banner-gradient: linear-gradient(135deg, #F3E5F5 0%, #E1BEE7 100%);
+  --scene-card-radius: 10px;
+
   // 侧边栏
   .sidebar {
     background: linear-gradient(180deg, #6A1B9A 0%, #7B1FA2 100%);
@@ -26,5 +31,15 @@
 
   .accent-bg {
     background-color: var(--scene-discussion-primary);
+  }
+}
+
+// 讨论模式：未读标记弹跳动画
+@keyframes discussion-bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
   }
 }

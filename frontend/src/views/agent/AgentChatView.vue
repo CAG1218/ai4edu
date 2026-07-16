@@ -59,11 +59,39 @@
           </span>
           <span class="agent-chat__header-desc">{{ agentStore.currentAgentType?.description || '智能学习助手' }}</span>
         </div>
-        <!-- 模型状态指示灯 -->
-        <div class="agent-chat__model-indicator" :title="modelTooltip">
-          <span :class="['agent-chat__model-dot', modelDotClass]"></span>
-          <span class="agent-chat__model-name">{{ currentModelName }}</span>
-        </div>
+        <!-- 模型选择器 -->
+        <el-dropdown
+          class="agent-chat__model-dropdown"
+          trigger="click"
+          @command="handleModelChange"
+        >
+          <div class="agent-chat__model-indicator" :title="modelTooltip">
+            <span :class="['agent-chat__model-dot', modelDotClass]"></span>
+            <span class="agent-chat__model-name">{{ currentModelName }}</span>
+            <el-icon class="agent-chat__model-arrow"><ArrowDown /></el-icon>
+          </div>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item
+                v-for="model in agentStore.models"
+                :key="`${model.provider}-${model.model}`"
+                :command="model.provider"
+                :disabled="model.status !== 'available'"
+              >
+                <div class="agent-chat__model-option">
+                  <span
+                    :class="[
+                      'agent-chat__model-option-dot',
+                      model.status === 'available' ? 'agent-chat__model-option-dot--green' : 'agent-chat__model-option-dot--gray',
+                    ]"
+                  ></span>
+                  <span class="agent-chat__model-option-name">{{ model.provider }} / {{ model.model }}</span>
+                  <span class="agent-chat__model-option-status">{{ model.status === 'available' ? '可用' : '未配置' }}</span>
+                </div>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <!-- 导出按钮 -->
         <el-button
           type="primary"
@@ -164,8 +192,8 @@
  */
 import { ref, onMounted, nextTick, watch, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Promotion, Plus, Delete, ChatDotRound, Download } from '@element-plus/icons-vue'
-import { ElMessageBox } from 'element-plus'
+import { Promotion, Plus, Delete, ChatDotRound, Download, ArrowDown } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAgentStore } from '@/stores/agent'
 import CitationList from './components/CitationList.vue'
 import ContextBadges from './components/ContextBadges.vue'
@@ -177,6 +205,7 @@ const route = useRoute()
 
 const inputMessage = ref<string>('')
 const selectedAgentType = ref<string>('general')
+const preferredModel = ref<string>('')
 const messageContainerRef = ref<HTMLElement | null>(null)
 const exportDialogVisible = ref<boolean>(false)
 
@@ -190,6 +219,7 @@ const currentSceneName = computed<string>(() => {
 
 /** 当前模型名称 */
 const currentModelName = computed<string>(() => {
+  if (preferredModel.value) return preferredModel.value
   const lastMsg = agentStore.messages[agentStore.messages.length - 1]
   if (lastMsg?.role === 'assistant' && (lastMsg as any).model_name) {
     return (lastMsg as any).model_name
@@ -260,6 +290,21 @@ async function handleDeleteSession(sessionId: string): Promise<void> {
 /** 切换Agent类型 */
 function handleTypeChange(): void {
   agentStore.fetchSessions(1, 20, selectedAgentType.value)
+}
+
+/** 切换模型偏好 */
+function handleModelChange(provider: string): void {
+  const model = agentStore.models.find((m) => m.provider === provider)
+  if (!model || model.status !== 'available') {
+    ElMessage.warning('该模型当前不可用或未配置 API Key')
+    return
+  }
+  preferredModel.value = `${model.provider} / ${model.model}`
+  // 临时更新当前会话的模型偏好（后端发送消息时会根据可用性自动路由）
+  if (agentStore.currentSession) {
+    agentStore.currentSession.model_name = model.model
+  }
+  ElMessage.success(`已切换模型偏好为 ${model.provider} / ${model.model}`)
 }
 
 /** 滚动到底部 */
@@ -435,7 +480,17 @@ onMounted(async () => {
     padding: 4px 12px;
     border-radius: 16px;
     background: #f5f5f5;
-    cursor: default;
+    cursor: pointer;
+    transition: background 0.2s;
+
+    &:hover {
+      background: #eaeaea;
+    }
+  }
+
+  &__model-arrow {
+    font-size: 10px;
+    color: #999;
   }
 
   &__model-dot {
@@ -457,6 +512,37 @@ onMounted(async () => {
   &__model-name {
     font-size: 12px;
     color: #666;
+  }
+
+  &__model-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 180px;
+  }
+
+  &__model-option-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+
+    &--green {
+      background: #4caf50;
+    }
+
+    &--gray {
+      background: #bdbdbd;
+    }
+  }
+
+  &__model-option-name {
+    flex: 1;
+    font-size: 13px;
+  }
+
+  &__model-option-status {
+    font-size: 12px;
+    color: #999;
   }
 
   &__messages {

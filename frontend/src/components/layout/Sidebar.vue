@@ -15,22 +15,22 @@
       text-color="rgba(255, 255, 255, 0.8)"
       active-text-color="#FFFFFF"
     >
-      <el-menu-item index="/scene/classroom/dashboard">
+      <el-menu-item index="/scene/classroom/dashboard" @click="navigateTo('/scene/classroom/dashboard')">
         <el-icon><School /></el-icon>
         <template #title>课堂模式</template>
       </el-menu-item>
 
-      <el-menu-item index="/scene/self_study/dashboard">
+      <el-menu-item index="/scene/self_study/dashboard" @click="navigateTo('/scene/self_study/dashboard')">
         <el-icon><Reading /></el-icon>
         <template #title>自习模式</template>
       </el-menu-item>
 
-      <el-menu-item index="/scene/exam/dashboard">
+      <el-menu-item index="/scene/exam/dashboard" @click="navigateTo('/scene/exam/dashboard')">
         <el-icon><EditPen /></el-icon>
         <template #title>考前模式</template>
       </el-menu-item>
 
-      <el-menu-item index="/scene/discussion/dashboard">
+      <el-menu-item index="/scene/discussion/dashboard" @click="navigateTo('/scene/discussion/dashboard')">
         <el-icon><ChatDotRound /></el-icon>
         <template #title>讨论模式</template>
       </el-menu-item>
@@ -101,9 +101,9 @@ const featureMenus = computed(() => [
   { index: `/scene/${currentSceneType.value}/graphs`, icon: 'Connection', title: '知识图谱' },
   { index: `/scene/${currentSceneType.value}/notes`, icon: 'EditPen', title: '智能笔记' },
   { index: `/scene/${currentSceneType.value}/resources`, icon: 'Folder', title: '资源管理' },
-  { index: `/scene/${currentSceneType.value}/buddy`, icon: 'Sunny', title: 'AI 学伴' },
-  { index: `/scene/${currentSceneType.value}/ai-chat`, icon: 'ChatDotRound', title: 'AI 对话' },
+  { index: `/scene/${currentSceneType.value}/agent`, icon: 'ChatLineSquare', title: 'AI 智能体中心' },
   { index: `/scene/${currentSceneType.value}/search`, icon: 'Search', title: '全局搜索' },
+  { index: `/scene/${currentSceneType.value}/growth-profile`, icon: 'TrendCharts', title: '成长档案' },
 ])
 
 </script>

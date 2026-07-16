@@ -84,6 +84,7 @@ class AuthService:
             role=user.role,
             avatar_url=user.avatar_url,
             onboarding_completed=user.onboarding_completed,
+            major=user.major,
         )
 
     async def register(self, request: RegisterRequest) -> RegisterResponse:
@@ -104,14 +105,6 @@ class AuthService:
         if existing.scalars().first():
             raise ValidationException(message="该邮箱已注册")
 
-        # 验证角色：教师需要邀请码
-        if request.role == "teacher" and not request.invite_code:
-            raise ValidationException(message="教师注册需要邀请码")
-
-        # 验证邀请码（简单实现，生产环境应查数据库）
-        if request.invite_code and request.invite_code != settings.SECRET_KEY[:8]:
-            raise ValidationException(message="邀请码无效")
-
         # 创建用户
         user = User(
             email=request.email,
@@ -120,6 +113,7 @@ class AuthService:
             role=request.role,
             school=request.school,
             grade=request.grade,
+            major=request.major,
             default_scene="classroom",
             locale="zh-CN",
             onboarding_completed=False,
@@ -205,6 +199,7 @@ class AuthService:
             "role": user.role,
             "grade": user.grade,
             "school": user.school,
+            "major": user.major,
             "default_scene": user.default_scene,
             "locale": user.locale,
             "onboarding_completed": user.onboarding_completed,

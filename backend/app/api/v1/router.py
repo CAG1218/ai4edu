@@ -25,6 +25,7 @@ from app.api.v1.dashboard import router as dashboard_router
 from app.api.v1.classroom import router as classroom_router
 from app.api.v1.quota import router as quota_router
 from app.api.v1.export import router as export_router
+from app.api.v1.growth import router as growth_router
 
 # v1 总路由
 api_v1_router = APIRouter()
@@ -53,3 +54,4 @@ api_v1_router.include_router(dashboard_router, tags=["仪表盘"])
 api_v1_router.include_router(classroom_router, prefix="/agents/classroom-records", tags=["课堂记录"])
 api_v1_router.include_router(quota_router, prefix="/admin/quotas", tags=["配额管理"])
 api_v1_router.include_router(export_router, prefix="/agents", tags=["对话导出"])
+api_v1_router.include_router(growth_router, prefix="/growth", tags=["成长档案"])

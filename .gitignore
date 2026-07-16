@@ -47,3 +47,19 @@ midterm/*.zip
 # Celery scheduler DB
 celerybeat-schedule*
 
+
+# Build outputs
+dist-new/
+frontend/dist-new/
+
+# Deployment archives
+*.tar.gz
+
+# Temp test scripts
+check_deepseek_direct.py
+inspect_compose.py
+test_deepseek_real.py
+test_ws_cloud.py
+
+# Screenshots
+cloud-*.png

@@ -11,7 +11,7 @@ export const teacherRoutes: RouteRecordRaw[] = [
     component: AppLayout,
     meta: {
       requiresAuth: true,
-      roles: ['teacher', 'admin', 'super_admin'],
+      allowedRoles: ['teacher', 'admin'],
     },
     children: [
       {
@@ -93,6 +93,16 @@ export const teacherRoutes: RouteRecordRaw[] = [
         meta: {
           title: 'AI 对话',
           requiresAuth: true,
+        },
+      },
+      {
+        path: 'students/:studentId/growth-profile',
+        name: 'TeacherStudentGrowthProfile',
+        component: () => import('@/views/growth/GrowthProfileView.vue'),
+        meta: {
+          title: '学生成长档案',
+          requiresAuth: true,
+          allowedRoles: ['teacher', 'admin'],
         },
       },
     ],

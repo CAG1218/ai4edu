@@ -26,7 +26,6 @@ export interface RegisterParams {
   password: string
   nickname: string
   role?: string
-  invite_code?: string
   school?: string
   grade?: string
 }
@@ -112,7 +111,7 @@ export const authApi = {
    */
   async completeOnboarding(
     userId: number,
-    data: { role: string; interests: string[]; goals: string[] },
+    data: { role: string; major: string; interests: string[]; goals: string[] },
   ): Promise<void> {
     await api.post(`/users/${userId}/onboarding`, data)
   },

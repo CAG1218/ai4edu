@@ -98,6 +98,7 @@ async def get_current_user_info(
         role=current_user.role,
         grade=current_user.grade,
         school=current_user.school,
+        major=current_user.major,
         default_scene=current_user.default_scene,
         locale=current_user.locale,
         onboarding_completed=current_user.onboarding_completed,

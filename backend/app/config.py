@@ -71,6 +71,18 @@ class Settings(BaseSettings):
     MINIO_SECRET_KEY: str = "minioadmin"
     MINIO_BUCKET: str = "ai4edu"
     MINIO_SECURE: bool = False
+    MINIO_PUBLIC_ENDPOINT: str = ""  # 浏览器可访问的 MinIO 地址，留空则回退到 MINIO_ENDPOINT
+
+    @property
+    def MINIO_PUBLIC_ENDPOINT_OR_DEFAULT(self) -> str:
+        """浏览器可访问的 MinIO 地址（留空回退到 MINIO_ENDPOINT）
+
+        用于生成返回给前端/浏览器的预签名下载 URL。
+        在 Docker 部署中，MINIO_ENDPOINT 通常为内网地址（如 minio:9000），
+        而浏览器无法解析该 hostname，因此需要通过 MINIO_PUBLIC_ENDPOINT
+        指定一个外部可访问的地址（如 121.43.129.181:9002）。
+        """
+        return self.MINIO_PUBLIC_ENDPOINT or self.MINIO_ENDPOINT
 
     # Elasticsearch
     ELASTICSEARCH_HOST: str = "http://localhost:9200"

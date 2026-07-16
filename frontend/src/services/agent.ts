@@ -253,7 +253,14 @@ export const agentApi = {
 
   /** 获取WebSocket连接URL */
   getStreamUrl(sessionId: string): string {
-    const baseUrl = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000'
+    // 优先使用显式配置；否则根据当前页面协议/主机动态构造
+    let baseUrl: string
+    if (import.meta.env.VITE_WS_BASE_URL) {
+      baseUrl = import.meta.env.VITE_WS_BASE_URL
+    } else {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      baseUrl = `${protocol}//${window.location.host}`
+    }
     const token = localStorage.getItem('access_token') || ''
     return `${baseUrl}/api/v1/agents/ws/${sessionId}?token=${token}`
   },

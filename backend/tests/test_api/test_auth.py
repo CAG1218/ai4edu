@@ -120,9 +120,9 @@ class TestRegisterAPI:
         db_session,
     ) -> None:
         """
-        测试教师注册无邀请码
+        测试教师注册无需邀请码
 
-        以教师角色注册但未提供邀请码，应返回422
+        以教师角色注册且不提供邀请码，应注册成功
         """
         response = await async_client.post(
             "/api/v1/auth/register",
@@ -134,9 +134,11 @@ class TestRegisterAPI:
             },
         )
 
-        assert response.status_code == 422
+        assert response.status_code == 200
         data = response.json()
-        assert "邀请码" in data["message"]
+        assert data["code"] == 200
+        assert data["data"]["email"] == "teacher2@ai4edu.com"
+        assert data["data"]["nickname"] == "新教师"
 
 
 class TestLoginAPI:

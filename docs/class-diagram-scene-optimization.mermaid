@@ -1,0 +1,218 @@
+classDiagram
+    %% ===== 枚举与配置 =====
+    class SceneType {
+        <<enum>>
+        CLASSROOM = 'classroom'
+        SELF_STUDY = 'self_study'
+        EXAM = 'exam'
+        DISCUSSION = 'discussion'
+    }
+
+    class SceneConfigEntry {
+        +String name
+        +String nameEn
+        +String icon
+        +String color
+        +String slogan
+        +String description
+        +String illustration
+        +String accentColor
+    }
+
+    class SCENE_CONFIG {
+        <<const Record~SceneType, SceneConfigEntry~>>
+    }
+
+    %% ===== Mock 数据接口 =====
+    class CourseScheduleItem {
+        +String id
+        +String name
+        +String startTime
+        +String endTime
+        +String location
+        +CourseStatus status
+        +String teacher
+    }
+
+    class CourseStatus {
+        <<enum>>
+        ONGOING = 'ongoing'
+        ENDED = 'ended'
+        UPCOMING = 'upcoming'
+    }
+
+    class StudyTask {
+        +String id
+        +String title
+        +Boolean completed
+        +String subject
+        +String priority
+    }
+
+    class FlashcardStats {
+        +Number pendingReview
+        +Number masteryRate
+        +String nextReviewTopic
+    }
+
+    class KnowledgeGraphMini {
+        +Number totalNodes
+        +Number weakNodes
+        +GraphNode[] nodes
+    }
+
+    class GraphNode {
+        +String id
+        +String label
+        +String color
+        +Boolean isWeak
+    }
+
+    class StudyTimeData {
+        +String weekHours
+        +String todayHours
+        +Number streakDays
+    }
+
+    class ExamCountdownData {
+        +Number daysLeft
+        +String examName
+        +String examDate
+    }
+
+    class ReviewProgressData {
+        +Number overallProgress
+        +SubjectProgress[] subjects
+    }
+
+    class SubjectProgress {
+        +String subject
+        +Number progress
+    }
+
+    class WrongBookStats {
+        +Number pendingReview
+        +Number mastered
+        +Number correctRate
+    }
+
+    class WeakPoint {
+        +String id
+        +String name
+        +WeaknessLevel level
+    }
+
+    class WeaknessLevel {
+        <<enum>>
+        CRITICAL = 'critical'
+        WARNING = 'warning'
+        CAUTION = 'caution'
+    }
+
+    class DiscussionTopic {
+        +String id
+        +String title
+        +Number participants
+        +Number replies
+        +Number heatScore
+        +String[] tags
+    }
+
+    class MyDiscussionItem {
+        +String id
+        +String title
+        +DiscussionType type
+        +Number newReplies
+        +Boolean resolved
+    }
+
+    class DiscussionType {
+        <<enum>>
+        MY_QUESTION = 'my_question'
+        PARTICIPATED = 'participated'
+    }
+
+    class QuickAction {
+        +String label
+        +String icon
+        +String route
+        +String buttonType
+    }
+
+    class StatItem {
+        +String label
+        +String|Number value
+        +String icon
+        +String color
+    }
+
+    %% ===== 组件 Props =====
+    class SceneWelcomeBanner {
+        +SceneConfigEntry config
+    }
+
+    class SceneStatCard {
+        +StatItem[] stats
+    }
+
+    class QuickActionBar {
+        +QuickAction[] actions
+        +String title
+    }
+
+    class ClassroomDashboard {
+        +CourseScheduleItem[] todayCourses
+        +CourseScheduleItem currentCourse
+        +QuickAction[] toolbarActions
+    }
+
+    class SelfStudyDashboard {
+        +StudyTask[] tasks
+        +FlashcardStats flashcardStats
+        +KnowledgeGraphMini graphMini
+        +StudyTimeData studyTime
+    }
+
+    class ExamDashboard {
+        +ExamCountdownData countdown
+        +ReviewProgressData reviewProgress
+        +WrongBookStats wrongBookStats
+        +WeakPoint[] weakPoints
+        +QuickAction[] toolbarActions
+    }
+
+    class DiscussionDashboard {
+        +DiscussionTopic[] hotTopics
+        +MyDiscussionItem[] myDiscussions
+        +QuickAction[] collabActions
+    }
+
+    %% ===== 关系 =====
+    SCENE_CONFIG --> SceneConfigEntry : Record~SceneType, ~
+    SceneConfigEntry --> SceneType : keyed by
+
+    CourseScheduleItem --> CourseStatus : status
+    StudyTask --> CourseScheduleItem : shares id pattern
+    KnowledgeGraphMini --> GraphNode : nodes[]
+    ReviewProgressData --> SubjectProgress : subjects[]
+    WeakPoint --> WeaknessLevel : level
+    MyDiscussionItem --> DiscussionType : type
+
+    SceneWelcomeBanner --> SceneConfigEntry : props.config
+    SceneStatCard --> StatItem : props.stats[]
+    QuickActionBar --> QuickAction : props.actions[]
+
+    ClassroomDashboard --> CourseScheduleItem : todayCourses[]
+    ClassroomDashboard --> QuickAction : toolbarActions[]
+    SelfStudyDashboard --> StudyTask : tasks[]
+    SelfStudyDashboard --> FlashcardStats : flashcardStats
+    SelfStudyDashboard --> KnowledgeGraphMini : graphMini
+    SelfStudyDashboard --> StudyTimeData : studyTime
+    ExamDashboard --> ExamCountdownData : countdown
+    ExamDashboard --> ReviewProgressData : reviewProgress
+    ExamDashboard --> WrongBookStats : wrongBookStats
+    ExamDashboard --> WeakPoint : weakPoints[]
+    ExamDashboard --> QuickAction : toolbarActions[]
+    DiscussionDashboard --> DiscussionTopic : hotTopics[]
+    DiscussionDashboard --> MyDiscussionItem : myDiscussions[]
+    DiscussionDashboard --> QuickAction : collabActions[]

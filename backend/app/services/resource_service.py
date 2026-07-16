@@ -84,6 +84,11 @@ class ResourceService:
         """
         获取 MinIO 预签名URL
 
+        使用 MINIO_PUBLIC_ENDPOINT（浏览器可访问地址）创建 MinIO client，
+        以保证返回给前端的预签名 URL 能被浏览器正常解析与访问。
+        若 MINIO_PUBLIC_ENDPOINT 未配置，则回退到 MINIO_ENDPOINT。
+        上传操作仍走 _get_minio_client（使用内网 MINIO_ENDPOINT）。
+
         Args:
             file_key: 存储Key
             expires_hours: 过期时间（小时）
@@ -91,12 +96,18 @@ class ResourceService:
         Returns:
             预签名URL
         """
-        client = self._get_minio_client()
-        if client is None:
-            return None
-
         try:
             from datetime import timedelta
+
+            from minio import Minio
+
+            # 使用公网 endpoint 生成预签名 URL，供浏览器访问
+            client = Minio(
+                settings.MINIO_PUBLIC_ENDPOINT_OR_DEFAULT,
+                access_key=settings.MINIO_ACCESS_KEY,
+                secret_key=settings.MINIO_SECRET_KEY,
+                secure=settings.MINIO_SECURE,
+            )
 
             url = client.presigned_get_object(
                 settings.MINIO_BUCKET,

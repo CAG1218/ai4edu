@@ -47,6 +47,15 @@ const constantRoutes: RouteRecordRaw[] = [
         },
       },
       {
+        path: 'major',
+        name: 'onboarding-major',
+        component: () => import('@/views/onboarding/StepMajorView.vue'),
+        meta: {
+          title: '所在专业',
+          requiresAuth: true,
+        },
+      },
+      {
         path: 'interests',
         name: 'onboarding-interests',
         component: () => import('@/views/onboarding/StepInterestsView.vue'),
