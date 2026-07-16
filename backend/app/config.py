@@ -97,9 +97,70 @@ class Settings(BaseSettings):
     OPENAI_API_BASE: str = "https://api.openai.com/v1"
     OPENAI_MODEL: str = "gpt-4o"
 
+    # ============ 多模型配置 ============
+    # 多模型路由开关（false 时回退到单一 OPENAI_* 配置）
+    LLM_MULTI_MODEL_ENABLED: bool = True
+
+    # DeepSeek
+    DEEPSEEK_API_KEY: str = ""
+    DEEPSEEK_API_BASE: str = "https://api.deepseek.com/v1"
+    DEEPSEEK_MODEL: str = "deepseek-chat"
+
+    # 腾讯混元（OpenAI 兼容模式）
+    HUNYUAN_API_KEY: str = ""
+    HUNYUAN_API_BASE: str = "https://api.hunyuan.cloud.tencent.com/v1"
+    HUNYUAN_MODEL: str = "hunyuan-pro"
+
+    # 阿里通义千问（DashScope OpenAI 兼容模式）
+    QWEN_API_KEY: str = ""
+    QWEN_API_BASE: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    QWEN_MODEL: str = "qwen-plus"
+
+    # 模型优先级（逗号分隔，从高到低）
+    LLM_MODEL_PRIORITY: str = "deepseek,qwen,hunyuan"
+
+    # 单模型连续失败次数阈值（超过后切换备选）
+    LLM_MAX_FAILURES: int = 2
+
+    # 速率限制（每分钟最大请求数，0=不限制）
+    LLM_RATE_LIMIT_PER_MINUTE: int = 60
+
     # Celery
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
+
+    # ============ v2 新增：Celery beat 配置 ============
+    CELERY_BEAT_HEALTH_CHECK_INTERVAL: int = 60  # 模型健康检查间隔（秒）
+
+    # ============ v2 新增：OCR/ASR 配置 ============
+    ALIYUN_OCR_API_KEY: str = ""
+    ALIYUN_OCR_ENDPOINT: str = "https://ocr-api.cn-hangzhou.aliyuncs.com"
+    ALIYUN_ASR_APP_KEY: str = ""
+    ALIYUN_ASR_ENDPOINT: str = "https://nls-meta.cn-shanghai.aliyuncs.com"
+    TENCENT_OCR_SECRET_ID: str = ""
+    TENCENT_OCR_SECRET_KEY: str = ""
+    TENCENT_OCR_REGION: str = "ap-guangzhou"
+    TENCENT_ASR_SECRET_ID: str = ""
+    TENCENT_ASR_SECRET_KEY: str = ""
+    TENCENT_ASR_REGION: str = "ap-guangzhou"
+    OCR_PROVIDER_PRIORITY: str = "aliyun,tencent,mock"  # 逗号分隔
+
+    # ============ v2 新增：负载均衡配置 ============
+    LLM_BALANCER_STRATEGY: str = "latency"  # latency / weighted / sticky
+    LLM_STICKY_DEFAULT: bool = False  # sticky 默认关闭
+    LLM_HEALTH_CHECK_TIMEOUT: int = 10  # 健康检查超时秒数
+
+    # ============ v2 新增：导出配置 ============
+    EXPORT_MINIO_BUCKET: str = "ai4edu-exports"
+    EXPORT_PRESIGN_EXPIRE: int = 1800  # 预签名 URL 有效期秒数（30min）
+    EXPORT_MAX_FILE_SIZE: int = 104857600  # 上传文件最大 100MB
+
+    # ============ v2 新增：配额配置 ============
+    QUOTA_DEFAULT_DAILY_TOKENS: int = 500000
+    QUOTA_DEFAULT_MONTHLY_TOKENS: int = 10000000
+    QUOTA_REDIS_KEY_PREFIX: str = "quota"
+    QUOTA_DAILY_TTL: int = 90000       # 25h in seconds
+    QUOTA_MONTHLY_TTL: int = 3024000   # 35d in seconds
 
     # OpenTelemetry
     OTEL_EXPORTER_OTLP_ENDPOINT: str = "http://localhost:4317"

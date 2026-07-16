@@ -52,6 +52,16 @@ export const sceneRoutes: RouteRecordRaw[] = [
         },
       },
       {
+        // ========== AI 智能体中心入口 ==========
+        path: 'agent',
+        name: 'AgentCenter',
+        component: () => import('@/views/agent/AgentCenterView.vue'),
+        meta: {
+          title: 'AI智能体中心',
+          requiresAuth: true,
+        },
+      },
+      {
         path: 'ai-chat/:sessionId?',
         name: 'SceneAIChat',
         component: () => import('@/views/agent/AgentChatView.vue'),

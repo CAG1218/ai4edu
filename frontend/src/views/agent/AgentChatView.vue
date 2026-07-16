@@ -14,9 +14,9 @@
         <el-select v-model="selectedAgentType" placeholder="选择助手类型" size="small" @change="handleTypeChange">
           <el-option
             v-for="at in agentStore.agentTypes"
-            :key="at.type"
+            :key="at.agent_type"
             :label="at.name"
-            :value="at.type"
+            :value="at.agent_type"
           />
         </el-select>
       </div>
@@ -27,7 +27,7 @@
           v-for="session in agentStore.sessions"
           :key="session.id"
           :class="['agent-chat__session-item', { 'agent-chat__session-item--active': session.id === agentStore.currentSession?.id }]"
-          @click="handleSelectSession(session.id)"
+          @click="handleSelectSession(String(session.id))"
         >
           <div class="agent-chat__session-info">
             <span class="agent-chat__session-title">{{ session.title }}</span>
@@ -37,7 +37,7 @@
             type="danger"
             link
             size="small"
-            @click.stop="handleDeleteSession(session.id)"
+            @click.stop="handleDeleteSession(String(session.id))"
           >
             <el-icon><Delete /></el-icon>
           </el-button>
@@ -49,14 +49,31 @@
     <!-- 右侧对话区域 -->
     <div class="agent-chat__main">
       <!-- 顶部Agent信息 -->
-      <div v-if="agentStore.currentAgentType" class="agent-chat__header">
+      <div v-if="agentStore.currentAgentType || currentSceneName" class="agent-chat__header">
         <el-avatar :size="36" :style="{ backgroundColor: '#1976D2' }">
           <el-icon :size="20"><ChatDotRound /></el-icon>
         </el-avatar>
         <div class="agent-chat__header-info">
-          <span class="agent-chat__header-name">{{ agentStore.currentAgentType.name }}</span>
-          <span class="agent-chat__header-desc">{{ agentStore.currentAgentType.description }}</span>
+          <span class="agent-chat__header-name">
+            {{ currentSceneName || agentStore.currentAgentType?.name || 'AI 对话' }}
+          </span>
+          <span class="agent-chat__header-desc">{{ agentStore.currentAgentType?.description || '智能学习助手' }}</span>
         </div>
+        <!-- 模型状态指示灯 -->
+        <div class="agent-chat__model-indicator" :title="modelTooltip">
+          <span :class="['agent-chat__model-dot', modelDotClass]"></span>
+          <span class="agent-chat__model-name">{{ currentModelName }}</span>
+        </div>
+        <!-- 导出按钮 -->
+        <el-button
+          type="primary"
+          plain
+          size="small"
+          :icon="Download"
+          @click="exportDialogVisible = true"
+        >
+          导出
+        </el-button>
       </div>
 
       <!-- 消息列表 -->
@@ -71,6 +88,11 @@
           </el-avatar>
           <div class="agent-chat__message-content">
             <div class="agent-chat__message-bubble" v-html="renderMarkdown(msg.content)"></div>
+            <!-- 引用来源展示 -->
+            <CitationList
+              v-if="msg.role === 'assistant' && getMessageCitations(msg)"
+              :citations="getMessageCitations(msg)!"
+            />
             <span class="agent-chat__message-time">{{ formatTime(msg.created_at) }}</span>
           </div>
         </div>
@@ -107,6 +129,8 @@
 
       <!-- 底部输入区 -->
       <div v-if="agentStore.hasActiveSession" class="agent-chat__input-area">
+        <!-- 上下文标签 -->
+        <ContextBadges :summary="agentStore.currentContextSummary" />
         <el-input
           v-model="inputMessage"
           type="textarea"
@@ -127,6 +151,9 @@
         </el-button>
       </div>
     </div>
+
+    <!-- 导出对话框 -->
+    <ExportDialog v-model="exportDialogVisible" />
   </div>
 </template>
 
@@ -135,16 +162,68 @@
  * AI4Edu AI智能体对话页面
  * 左侧会话列表 + 右侧对话区域 + WebSocket流式消息
  */
-import { ref, onMounted, nextTick, watch } from 'vue'
-import { Promotion, Plus, Delete, ChatDotRound } from '@element-plus/icons-vue'
+import { ref, onMounted, nextTick, watch, computed } from 'vue'
+import { useRoute } from 'vue-router'
+import { Promotion, Plus, Delete, ChatDotRound, Download } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { useAgentStore } from '@/stores/agent'
+import CitationList from './components/CitationList.vue'
+import ContextBadges from './components/ContextBadges.vue'
+import ExportDialog from '@/components/agent/ExportDialog.vue'
+import type { Citation, ContextSummary } from '@/services/agent'
 
 const agentStore = useAgentStore()
+const route = useRoute()
 
 const inputMessage = ref<string>('')
 const selectedAgentType = ref<string>('general')
 const messageContainerRef = ref<HTMLElement | null>(null)
+const exportDialogVisible = ref<boolean>(false)
+
+/** 当前场景名称 */
+const currentSceneName = computed<string>(() => {
+  const sceneType = agentStore.currentSession?.scene_type
+  if (!sceneType) return ''
+  const scene = agentStore.scenes.find((s) => s.scene_type === sceneType)
+  return scene ? scene.name : ''
+})
+
+/** 当前模型名称 */
+const currentModelName = computed<string>(() => {
+  const lastMsg = agentStore.messages[agentStore.messages.length - 1]
+  if (lastMsg?.role === 'assistant' && (lastMsg as any).model_name) {
+    return (lastMsg as any).model_name
+  }
+  return agentStore.currentSession?.model_name || 'AI'
+})
+
+/** 模型指示灯样式 */
+const modelDotClass = computed<string>(() => {
+  const count = agentStore.availableModelCount
+  if (count >= 2) return 'agent-chat__model-dot--green'
+  if (count === 1) return 'agent-chat__model-dot--yellow'
+  return 'agent-chat__model-dot--red'
+})
+
+/** 模型 tooltip */
+const modelTooltip = computed<string>(() => {
+  const count = agentStore.availableModelCount
+  if (count >= 2) return `${count} 个模型可用`
+  if (count === 1) return `仅 ${count} 个模型可用，可能降级`
+  return '无可用模型（演示模式）'
+})
+
+/** 从消息 metadata 中提取引用来源 */
+function getMessageCitations(msg: any): Citation[] | null {
+  if (!msg?.metadata?.citations) return null
+  return msg.metadata.citations as Citation[]
+}
+
+/** 从消息 metadata 中提取上下文摘要 */
+function getMessageContextSummary(msg: any): ContextSummary | null {
+  if (!msg?.metadata?.context_summary) return null
+  return msg.metadata.context_summary as ContextSummary
+}
 
 /** 发送消息 */
 async function handleSend(): Promise<void> {
@@ -221,11 +300,22 @@ watch(
 )
 
 onMounted(async () => {
-  await agentStore.fetchAgentTypes()
-  if (!agentStore.agentTypes.some((item) => item.type === selectedAgentType.value)) {
-    selectedAgentType.value = agentStore.agentTypes[0]?.type ?? 'general'
+  await Promise.all([
+    agentStore.fetchAgentTypes(),
+    agentStore.fetchScenes(),
+    agentStore.fetchModels(),
+  ])
+  if (!agentStore.agentTypes.some((item) => item.agent_type === selectedAgentType.value)) {
+    selectedAgentType.value = agentStore.agentTypes[0]?.agent_type ?? 'general'
   }
   await agentStore.fetchSessions(1, 20, selectedAgentType.value)
+
+  // 如果 URL 中有 sessionId，自动选择该会话
+  const sessionId = route.params.sessionId as string
+  if (sessionId) {
+    await agentStore.selectSession(sessionId)
+    await scrollToBottom()
+  }
 })
 </script>
 
@@ -335,6 +425,38 @@ onMounted(async () => {
   &__header-desc {
     font-size: 12px;
     color: #999;
+  }
+
+  &__model-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    padding: 4px 12px;
+    border-radius: 16px;
+    background: #f5f5f5;
+    cursor: default;
+  }
+
+  &__model-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+
+    &--green {
+      background: #4caf50;
+    }
+    &--yellow {
+      background: #ff9800;
+    }
+    &--red {
+      background: #f44336;
+    }
+  }
+
+  &__model-name {
+    font-size: 12px;
+    color: #666;
   }
 
   &__messages {

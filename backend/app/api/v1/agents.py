@@ -1,9 +1,11 @@
 """
 AI4Edu AI智能体 API
-提供AI对话、会话管理、智能体配置等端点
+提供AI对话、会话管理、智能体配置、多模型路由、场景预设等端点
 """
+import datetime
 import json
-from typing import Optional
+import logging
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,12 +17,17 @@ from app.schemas.agent import (
     AgentTypeResponse,
     IntentResult,
     MessageCreate,
-    MessageResponse,
+    ModelBalancerResponse,
+    ModelInfoResponse,
+    ScenePresetResponse,
     SessionCreate,
     SessionResponse,
 )
 from app.schemas.common import APIResponse, PaginationParams, PaginatedResponse
 from app.agents.intent_router import IntentRouter, IntentType, intent_router
+from app.agents.scene_config import SCENE_PRESETS, get_scene_preset
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -144,9 +151,12 @@ async def list_sessions(
             "id": s.id,
             "agent_type": s.agent_type,
             "title": s.title,
+            "scene_type": s.scene_type,
+            "model_name": s.model_name,
             "message_count": s.message_count,
             "last_message_at": s.last_message_at.isoformat() if s.last_message_at else None,
             "created_at": s.created_at.isoformat() if s.created_at else None,
+            "updated_at": s.updated_at.isoformat() if s.updated_at else None,
         }
         for s in sessions
     ]
@@ -166,15 +176,48 @@ async def create_session(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
-    """创建新的AI对话会话"""
+    """
+    创建新的AI对话会话
+
+    当传入 scene_type 时，自动从场景预设加载：
+    - system_prompt ← 预设模板
+    - model_name ← LLMRouter 根据场景偏好选择
+    - agent_type ← 若未指定，则用预设的 default_agent_type
+    """
+    from app.agents.llm_router import llm_router
+
+    # 场景预设处理
+    system_prompt: Optional[str] = None
+    model_name: str = session_data.model_name or "gpt-4o"
+    agent_type: str = session_data.agent_type or "rag"
+
+    if session_data.scene_type:
+        preset = get_scene_preset(session_data.scene_type)
+        if preset:
+            system_prompt = preset.system_prompt
+            # 如果未指定 agent_type 或为默认值，使用场景预设的默认类型
+            if not session_data.agent_type or session_data.agent_type == "rag":
+                agent_type = preset.default_agent_type
+            # 通过 LLMRouter 获取场景偏好模型
+            try:
+                await llm_router._initialize()
+                model_provider = await llm_router.get_model(
+                    scene_type=session_data.scene_type
+                )
+                if model_provider:
+                    model_name = model_provider.model_name
+            except Exception as e:
+                logger.warning("获取场景偏好模型失败: %s, 使用默认模型", e)
+
     session = AgentSession(
         tenant_id=current_user.tenant_id or 0,
         user_id=current_user.id,
-        agent_type=session_data.agent_type,
-        title=session_data.title or f"{session_data.agent_type}会话",
+        agent_type=agent_type,
+        title=session_data.title or f"{agent_type}会话",
         scene_type=session_data.scene_type,
         course_id=session_data.course_id,
-        model_name=session_data.model_name or "gpt-4o",
+        model_name=model_name,
+        system_prompt=system_prompt,
         context=json.dumps(session_data.context, ensure_ascii=False) if session_data.context else None,
     )
     db.add(session)
@@ -185,7 +228,10 @@ async def create_session(
         data={
             "id": session.id,
             "agent_type": session.agent_type,
+            "scene_type": session.scene_type,
             "title": session.title,
+            "model_name": session.model_name,
+            "system_prompt": session.system_prompt,
             "created_at": session.created_at.isoformat() if session.created_at else None,
         },
         message="success",
@@ -230,6 +276,8 @@ async def get_session(
                     "role": m.role,
                     "content": m.content,
                     "content_type": m.content_type,
+                    "model_name": m.model_name,
+                    "metadata": json.loads(m.metadata_json) if m.metadata_json else None,
                     "created_at": m.created_at.isoformat() if m.created_at else None,
                 }
                 for m in messages
@@ -246,7 +294,16 @@ async def send_message(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
-    """向AI会话发送消息并获取回复"""
+    """
+    向AI会话发送消息并获取回复
+
+    改造点：
+    1. 意图路由时传入 scene_type 上下文
+    2. Agent context 中注入 db、user_id、tenant_id、course_id、scene_type
+    3. Agent 内部通过 ResourceContextBuilder 构建资源上下文
+    4. AI 消息 metadata_json 存储 citations + context_summary + model_fallback
+    5. 返回完整响应（含引用来源、上下文摘要、模型信息）
+    """
     from sqlalchemy import select
 
     # 获取会话
@@ -257,6 +314,9 @@ async def send_message(
     if not session or session.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="会话不存在")
 
+    # 如果会话有 scene_type 且有 system_prompt，在 context 中传递
+    scene_type = session.scene_type
+
     # 保存用户消息
     user_msg = AgentMessage(
         session_id=session_id,
@@ -266,10 +326,10 @@ async def send_message(
     )
     db.add(user_msg)
 
-    # 意图路由
+    # 意图路由（传入 scene_type 上下文）
     detected_intent = intent_router.route(
         message_data.content,
-        context={"current_agent_type": session.agent_type},
+        context={"current_agent_type": session.agent_type, "scene_type": scene_type},
     )
     agent_type_str = intent_router.get_agent_type(detected_intent)
 
@@ -290,15 +350,47 @@ async def send_message(
         for m in history
     ]
 
-    # 调用Agent
+    # 构建 Agent context（注入 db、user_id、course_id、scene_type 等）
+    agent_context: Dict[str, Any] = {
+        "user_id": current_user.id,
+        "tenant_id": current_user.tenant_id,
+        "session_id": session_id,
+        "course_id": session.course_id,
+        "scene_type": scene_type,
+        "db": db,
+    }
+
+    # 如果会话有预设 system_prompt，注入到 context
+    if session.system_prompt:
+        agent_context["system_prompt_override"] = session.system_prompt
+
+    # 调用Agent（内部通过 ResourceContextBuilder + LLMRouter）
     agent_result = await agent.execute(
         messages=messages,
-        context={
-            "user_id": current_user.id,
-            "tenant_id": current_user.tenant_id,
-            "session_id": session_id,
-        },
+        context=agent_context,
     )
+
+    # 提取引用来源和上下文摘要
+    citations = agent_result.get("citations", [])
+    context_summary = agent_result.get("context_summary", {
+        "notes_count": 0,
+        "resources_count": 0,
+        "graph_nodes_count": 0,
+        "teacher_methods_count": 0,
+    })
+    model_used = agent_result.get("model", "")
+    model_fallback = agent_result.get("model_fallback", False)
+    fallback_info = agent_result.get("fallback_info")
+
+    # 构建 metadata_json
+    metadata = {
+        "citations": citations,
+        "context_summary": context_summary,
+        "model_used": model_used,
+        "model_fallback": model_fallback,
+    }
+    if fallback_info:
+        metadata["fallback_info"] = fallback_info
 
     # 保存AI回复
     ai_msg = AgentMessage(
@@ -306,13 +398,18 @@ async def send_message(
         role="assistant",
         content=agent_result.get("content", ""),
         content_type="markdown",
-        model_name=agent_result.get("model", ""),
+        model_name=model_used,
+        metadata_json=json.dumps(metadata, ensure_ascii=False),
     )
     db.add(ai_msg)
 
     # 更新会话
     session.message_count += 2
-    session.last_message_at = __import__("datetime").datetime.utcnow()
+    session.last_message_at = datetime.datetime.utcnow()
+    # 更新 token 消耗
+    usage = agent_result.get("tokens", {})
+    if isinstance(usage, dict):
+        session.total_tokens += usage.get("total_tokens", 0)
     await db.flush()
 
     return APIResponse(
@@ -327,7 +424,12 @@ async def send_message(
                 "id": ai_msg.id,
                 "role": "assistant",
                 "content": agent_result.get("content", ""),
+                "model_name": model_used,
             },
+            "citations": citations,
+            "context_summary": context_summary,
+            "model_used": model_used,
+            "model_fallback": model_fallback,
             "detected_intent": detected_intent.value,
             "agent_type": agent_type_str,
         },
@@ -388,19 +490,98 @@ async def detect_intent(
 
 @router.websocket("/ws/{session_id}")
 async def websocket_chat(websocket: WebSocket, session_id: int):
-    """WebSocket 实时对话端点"""
+    """
+    WebSocket 实时对话端点
+
+    改造点：
+    1. 接收消息后，先发送 context 消息告知前端注入了哪些资源
+    2. 流式输出 chunks
+    3. done 消息中携带 model_used、model_fallback、citations
+    """
     await websocket.accept()
     try:
         while True:
-            data = await websocket.receive_text()
+            data_str = await websocket.receive_text()
+            try:
+                data = json.loads(data_str)
+            except json.JSONDecodeError:
+                await websocket.send_json({"type": "error", "message": "消息格式错误"})
+                continue
+
+            content = data.get("content", "")
+            if not content:
+                continue
+
             # 意图路由
-            detected_intent = intent_router.route(data)
+            detected_intent = intent_router.route(content)
             agent_type_str = intent_router.get_agent_type(detected_intent)
             agent = _get_agent_instance(agent_type_str)
 
+            # 查询会话信息
+            from sqlalchemy import select as sa_select
+            from app.database import async_session_maker
+
+            session_info: Dict[str, Any] = {}
+            try:
+                async with async_session_maker() as db:
+                    stmt = sa_select(AgentSession).where(AgentSession.id == session_id)
+                    result = await db.execute(stmt)
+                    session = result.scalars().first()
+                    if session:
+                        session_info = {
+                            "user_id": session.user_id,
+                            "tenant_id": session.tenant_id,
+                            "course_id": session.course_id,
+                            "scene_type": session.scene_type,
+                        }
+            except Exception as e:
+                logger.warning("WebSocket 查询会话失败: %s", e)
+
+            # 构建资源上下文
+            citations: List[Dict[str, Any]] = []
+            context_summary: Dict[str, Any] = {}
+            if session_info.get("user_id"):
+                try:
+                    from app.agents.resource_context import resource_context_builder
+
+                    async with async_session_maker() as ctx_db:
+                        context_result = await resource_context_builder.build(
+                            db=ctx_db,
+                            user_id=session_info["user_id"],
+                            tenant_id=session_info.get("tenant_id", 0),
+                            course_id=session_info.get("course_id"),
+                            query=content,
+                            scene_type=session_info.get("scene_type"),
+                        )
+                        citations = resource_context_builder.citations_to_dicts(
+                            context_result.citations
+                        )
+                        context_summary = context_result.summary
+                except Exception as e:
+                    logger.error("WebSocket 资源上下文构建失败: %s", e)
+
+            # 发送 context 消息
+            if context_summary:
+                await websocket.send_json({
+                    "type": "context",
+                    "summary": context_summary,
+                })
+
+            # 构建 agent context
+            agent_context: Dict[str, Any] = {
+                "user_id": session_info.get("user_id"),
+                "tenant_id": session_info.get("tenant_id"),
+                "session_id": session_id,
+                "course_id": session_info.get("course_id"),
+                "scene_type": session_info.get("scene_type"),
+                "citations": citations,
+                "context_summary": context_summary,
+            }
+
             # 流式输出
             async for chunk in agent.stream_execute(
-                messages=[{"role": "user", "content": data}],
+                messages=[{"role": "user", "content": content}],
+                context=agent_context,
             ):
                 await websocket.send_json({
                     "type": "chunk",
@@ -408,9 +589,178 @@ async def websocket_chat(websocket: WebSocket, session_id: int):
                     "agent_type": agent_type_str,
                 })
 
-            await websocket.send_json({"type": "done", "agent_type": agent_type_str})
-    except Exception:
-        await websocket.close()
+            # done 消息携带 citations 和模型信息
+            await websocket.send_json({
+                "type": "done",
+                "agent_type": agent_type_str,
+                "citations": citations,
+                "context_summary": context_summary,
+            })
+    except Exception as e:
+        logger.error("WebSocket 异常: %s", e)
+        try:
+            await websocket.close()
+        except Exception:
+            pass
+
+
+@router.get("/models", summary="获取可用模型列表及状态")
+async def list_models(
+    current_user: User = Depends(get_current_user),
+) -> APIResponse:
+    """
+    获取可用模型列表及健康状态
+
+    返回每个模型提供商的配置状态和可用性，
+    用于前端模型状态指示灯和模型选择器。
+    """
+    from app.agents.llm_router import llm_router
+
+    try:
+        health_list = await llm_router.health_check()
+        return APIResponse(
+            code=0,
+            data=health_list,
+            message="success",
+        )
+    except Exception as e:
+        logger.error("获取模型列表失败: %s", e)
+        return APIResponse(code=0, data=[], message="success")
+
+
+@router.get("/scenes", summary="获取场景预设配置列表")
+async def list_scenes(
+    current_user: User = Depends(get_current_user),
+) -> APIResponse:
+    """
+    获取场景预设配置列表
+
+    返回 4 类预设场景（自习/预习/复习/冲刺）的配置信息，
+    用于前端场景入口页渲染。
+    """
+    scenes = [
+        {
+            "scene_type": preset.scene_type,
+            "name": preset.name,
+            "description": preset.description,
+            "icon": preset.icon,
+            "preferred_model": preset.preferred_model,
+            "default_agent_type": preset.default_agent_type,
+        }
+        for preset in SCENE_PRESETS.values()
+    ]
+    return APIResponse(code=0, data=scenes, message="success")
+
+
+@router.get("/sessions/{session_id}/context", summary="获取会话上下文资源")
+async def get_session_context(
+    session_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """
+    获取当前会话注入的上下文资源列表
+
+    调用 ResourceContextBuilder 构建完整的资源上下文，
+    返回笔记/资源/图谱节点/老师方法列表及摘要。
+    """
+    from sqlalchemy import select
+
+    # 验证会话归属
+    stmt = select(AgentSession).where(AgentSession.id == session_id)
+    result = await db.execute(stmt)
+    session = result.scalars().first()
+
+    if not session or session.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    # 构建资源上下文
+    from app.agents.resource_context import resource_context_builder
+
+    try:
+        context_result = await resource_context_builder.build(
+            db=db,
+            user_id=current_user.id,
+            tenant_id=current_user.tenant_id or 0,
+            course_id=session.course_id,
+            scene_type=session.scene_type,
+        )
+        return APIResponse(
+            code=0,
+            data={
+                "notes": context_result.raw_notes,
+                "resources": context_result.raw_resources,
+                "graph_nodes": context_result.raw_graph_nodes,
+                "teacher_methods": context_result.raw_teacher_methods,
+                "citations": resource_context_builder.citations_to_dicts(
+                    context_result.citations
+                ),
+                "summary": context_result.summary,
+            },
+            message="success",
+        )
+    except Exception as e:
+        logger.error("获取会话上下文失败: %s", e)
+        return APIResponse(
+            code=0,
+            data={
+                "notes": [],
+                "resources": [],
+                "graph_nodes": [],
+                "teacher_methods": [],
+                "citations": [],
+                "summary": {
+                    "notes_count": 0,
+                    "resources_count": 0,
+                    "graph_nodes_count": 0,
+                    "teacher_methods_count": 0,
+                },
+            },
+            message="success",
+        )
+
+
+@router.get("/models/balancer", summary="获取模型负载均衡状态")
+async def get_model_balancer_status(
+    current_user: User = Depends(get_current_user),
+) -> APIResponse:
+    """
+    获取模型负载均衡状态
+
+    返回各 Provider 的健康指标（avg_latency_ms, success_rate, failure_count），
+    当前负载均衡策略（latency/weighted/sticky），
+    以及推荐模型（sticky 策略下）。
+
+    用于管理员监控模型健康状态和负载分布。
+    """
+    from app.agents.llm_router import llm_router
+    from app.config import settings
+
+    await llm_router._initialize()
+
+    providers_status = llm_router.get_balancer_status()
+    current_strategy = settings.LLM_BALANCER_STRATEGY
+
+    # sticky 策略下返回推荐模型
+    recommended_model: Optional[str] = None
+    if current_strategy == "sticky":
+        # 找第一个可用的已配置 provider
+        for p in providers_status:
+            if p.get("is_available") and p.get("is_configured"):
+                recommended_model = p.get("model_name")
+                break
+
+    response = ModelBalancerResponse(
+        providers=providers_status,
+        current_strategy=current_strategy,
+        recommended_model=recommended_model,
+    )
+
+    return APIResponse(
+        code=0,
+        data=response.model_dump(),
+        message="success",
+    )
 
 
 def _get_agent_instance(agent_type: str):

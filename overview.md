@@ -1,78 +1,103 @@
-# AI4Edu T05 阶段交付报告
+# AI 智能体中心 v2 — 交付总览
 
 ## TL;DR
-T05 四大模块全部完成：PWA离线能力、端到端可观测性、集成测试框架、生产部署优化。
+完成 AI 智能体中心 4 项增强能力（板书/录播 OCR/ASR 提取、多租户配额计量、对话导出 PDF/MD、模型负载均衡），42 个文件 8384 行代码，179 个测试全部通过，已推送 GitHub。
 
 ## 交付概览
 
-| 模块 | 状态 | 核心交付 |
-|------|------|---------|
-| T05-P1: PWA离线 | ✅ 完成 | SW + 5种缓存策略 + 离线队列 + 网络状态 + 提示UI |
-| T05-P2: 可观测性 | ✅ 完成 | OTel+Prometheus后端 + Web Vitals+错误追踪前端 + 遥测API |
-| T05-P3: 集成测试 | ✅ 完成 | E2E工作流测试 + 性能基准测试 (8/11通过) |
-| T05-P4: 部署优化 | ✅ 完成 | 多阶段Dockerfile + 生产Nginx + 一键部署脚本 |
+| 指标 | 数值 |
+|------|------|
+| 交付状态 | ✅ 全部完成 |
+| 测试通过率 | 179/179 (100%) |
+| 已知问题数 | 0 |
+| 新增文件 | 26 |
+| 修改文件 | 16 |
+| 代码行数 | +8384 / -238 |
+| Git 提交 | `fddf28d` |
+| 分支 | `陈安国的代码——AI智能体中心` |
 
-## 新建/修改文件清单
+## 4 项能力实现详情
 
-### PWA离线能力 (7文件)
-- `frontend/src/sw.ts` — Service Worker 源码
-- `frontend/src/sw.d.ts` — SW 类型声明
-- `frontend/src/composables/useNetworkStatus.ts` — 网络状态
-- `frontend/src/components/common/OfflineAlert.vue` — 离线提示
-- `frontend/src/utils/offlineQueue.ts` — 离线操作队列
-- `frontend/tsconfig.sw.json` — SW 专用 TypeScript 配置
-- `frontend/vite.config.ts` — PWA 插件配置（已修改）
+### 1. 板书/录播自动 OCR/ASR 提取（P1）
+- **架构**：Strategy + Factory 设计模式，多 provider 抽象层
+- **降级链**：aliyun → tencent → mock（无 API Key 也能跑通）
+- **异步处理**：Celery 任务队列（Redis broker）
+- **关键文件**：
+  - `backend/app/services/ocr_service.py` — OCR 多 provider
+  - `backend/app/services/asr_service.py` — ASR 多 provider
+  - `backend/app/tasks/extraction_tasks.py` — Celery 异步任务
+  - `backend/app/api/v1/classroom.py` — 课堂记录 API
+- **测试**：OCR 22 个 + ASR 20 个 = 42 个全部通过
 
-### 可观测性 (4文件)
-- `frontend/src/utils/telemetry.ts` — 前端遥测（Web Vitals + 错误 + 性能 + 行为）
-- `frontend/src/composables/usePerformance.ts` — 组件级性能追踪
-- `backend/app/api/v1/telemetry.py` — 遥测接收端点
-- `frontend/src/main.ts` — 集成遥测初始化（已修改）
+### 2. 多租户模型配额计量（P2）
+- **架构**：Redis 实时计数 + DB 持久化日志
+- **计数策略**：日配额（TTL 25h）+ 月配额（TTL 35d）
+- **关键文件**：
+  - `backend/app/services/quota_manager.py` — QuotaManager 单例
+  - `backend/app/models/usage.py` — LLMUsageLog + TenantQuota
+  - `backend/app/api/v1/quota.py` — 配额管理 API
+  - `frontend/src/views/admin/QuotaDashboard.vue` — 配额看板
+- **测试**：7 个全部通过
 
-### 集成测试 (3文件)
-- `backend/tests/test_integration/__init__.py`
-- `backend/tests/test_integration/test_e2e_workflows.py` — E2E 工作流测试
-- `backend/tests/test_integration/test_performance.py` — 性能基准测试
+### 3. 对话导出 PDF/Markdown（P2）
+- **架构**：reportlab 纯 Python PDF 生成（无系统依赖），MinIO 预签名 URL
+- **安全**：导出文件仅创建者可下载，30 分钟有效期
+- **关键文件**：
+  - `backend/app/services/agent_export_service.py` — 导出服务
+  - `backend/app/tasks/export_tasks.py` — Celery 导出任务
+  - `backend/app/api/v1/export.py` — 导出 API
+  - `frontend/src/components/agent/ExportDialog.vue` — 导出对话框
+- **测试**：7 个全部通过
 
-### 部署优化 (6文件)
-- `deploy/Dockerfile.backend` — 后端多阶段构建
-- `deploy/Dockerfile.frontend` — 前端构建（已优化）
-- `deploy/nginx/nginx.conf` — Nginx 主配置
-- `deploy/nginx/conf.d/default.conf` — 生产站点配置（HTTPS + 限流 + CSP）
-- `deploy/deploy.py` — 一键部署脚本
-- `backend/.dockerignore` + `frontend/.dockerignore`
+### 4. 模型负载均衡（P2）
+- **架构**：基于延迟/可用性的动态负载均衡
+- **策略**：latency（默认按延迟排序）、weighted（按成功率加权随机）、sticky（优先 recommended_model）
+- **健康指标**：指数移动平均（EMA）更新 avg_latency_ms 和 success_rate
+- **关键改造**：
+  - `backend/app/agents/llm_router.py` — 新增 tenant_id 配额检查 + 健康指标 + balancer 状态
+  - `backend/app/tasks/health_check.py` — Celery beat 每 60s 探测
+- **测试**：10 个全部通过
 
-## 架构亮点
+## 数据库变更
+- **新增 3 表**：llm_usage_logs、tenant_quotas、agent_exports
+- **修改 2 表**：classroom_records（加 file_url/provider/error_msg/updated_at）、teacher_methods（加 recommended_model）
+- **迁移文件**：`backend/migrations/versions/c8e2a4f7b901_add_v2_models.py`
 
-### PWA 缓存策略
+## 文档产出
+- `docs/prd-ai-agent-center-v2.md` — 增量 PRD（用户故事 + 需求池 + UI 设计 + 流程图）
+- `docs/architecture-ai-agent-center-v2.md` — 增量架构设计（10 项设计决策 + 5 个任务分解）
+- `docs/class-diagram-v2.mermaid` — v2 类图
+- `docs/sequence-diagram-v2.mermaid` — v2 时序图
+
+## SOP 流程
 ```
-API 请求 → NetworkFirst (10s超时→缓存)
-静态资源 → CacheFirst (30天)
-图片     → StaleWhileRevalidate
-页面导航 → NetworkFirst + 离线页面回退
-CDN资源  → StaleWhileRevalidate
-```
-
-### 可观测性数据流
-```
-前端 (Web Vitals/错误/性能)
-  → sendBeacon 批量上报
-  → /api/v1/telemetry
-  → ClickHouse analytics_events
-  → Prometheus + Grafana 展示
-```
-
-### 部署架构
-```
-[Nginx :443] → [FastAPI :8000] → [PostgreSQL]
-   ↓                ↓            [Redis]
-  前端静态     [ClickHouse]      [Neo4j]
-               [Elasticsearch]   [MinIO]
+产品经理（许清楚）→ PRD v2
+    ↓
+架构师（高见远）→ 架构设计 v2 + 任务分解
+    ↓
+工程师（寇豆码）→ 代码实现（42 文件，IS_PASS: YES）
+    ↓
+QA（严过关）→ 测试验证（179 passed）
+    ↓
+主理人（齐活林）→ Git commit + push GitHub
 ```
 
 ## 用户下一步建议
-1. `cd frontend && npm install` 安装 PWA 依赖
-2. `cd frontend && npm run build && npm run preview` 测试 PWA
-3. Chrome DevTools → Application → Service Workers 验证 SW
-4. 生产部署：`python deploy/deploy.py`
-5. 替换 `public/icons/` 中的占位图标为正式设计图标
+1. ~~**运行 Alembic 迁移**~~：✅ 已完成（3 新表 + 2 表加字段）
+2. ~~**安装新依赖**~~：✅ 已完成（reportlab + celery[redis]）
+3. ~~**启动 Celery worker**~~：✅ 已完成（Docker 容器 ai4edu-celery-worker）
+4. ~~**启动 Celery beat**~~：✅ 已完成（Docker 容器 ai4edu-celery-beat，每 60s 健康检查）
+5. ~~**重建后端 Docker 容器**~~：✅ 已完成（9 容器全部运行新镜像，v2 API 已上线）
+6. **配置 OCR/ASR API Key**（可选）：设置 ALIYUN_OCR_API_KEY / TENCENT_OCR_SECRET_ID 等环境变量，无配置时自动降级为 mock
+
+## 部署修复记录
+- `schemas/classroom.py`：合并旧+新 schema（v2 覆盖了旧 ClassroomCreate 等类）
+- `api/v1/classroom.py`：修复 `get_db_dep` 未定义 → 改用 `get_db` from `app.dependencies`
+- `docker-compose.yml`：修复 celery 模块路径 `app.celery` → `app.core.celery_app` + 补全环境变量
+- `.dockerignore`：排除 `celerybeat-schedule*` 文件
+- 提交：`a521d1c`
+
+## 当前运行状态
+- **9 个 Docker 容器**：backend + celery-worker + celery-beat + postgres + redis + neo4j + clickhouse + elasticsearch + minio
+- **Backend API**：http://localhost:8000（Swagger UI: /docs）
+- **11 个 v2 API 端点**：balancer / classroom-records / admin/quotas / agents/exports

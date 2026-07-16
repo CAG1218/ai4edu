@@ -43,3 +43,7 @@ midterm/*.mp4
 midterm/*.zip
 *.mp4
 *.zip
+
+# Celery scheduler DB
+celerybeat-schedule*
+

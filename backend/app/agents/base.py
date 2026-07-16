@@ -1,14 +1,12 @@
 """
 AI4Edu Agent 基类
 定义智能体公共接口：execute / stream_execute / system_prompt
-支持同步和流式输出
+支持同步和流式输出，通过 LLMRouter 实现多模型路由与容灾
 """
 import json
 import logging
 from abc import ABC, abstractmethod
 from typing import Any, AsyncGenerator, Dict, List, Optional
-
-import httpx
 
 from app.config import settings
 
@@ -39,14 +37,27 @@ class BaseAgent(ABC):
         """
         构建发送给LLM的消息列表，在开头插入系统提示词
 
+        处理顺序：
+        1. 如果 context 中有 system_prompt_override（场景预设），优先使用
+        2. 追加 resource_context（ResourceContextBuilder 产出的学习资源上下文）
+        3. 追加 _summarize_context 摘要
+
         Args:
             messages: 用户对话消息列表，每条 {role, content}
-            context: 上下文信息（user_id, tenant_id, session_id等）
+            context: 上下文信息（user_id, tenant_id, session_id, resource_context等）
 
         Returns:
             包含系统提示词的完整消息列表
         """
-        system_content = self.system_prompt
+        # 优先使用场景预设的 system_prompt_override
+        if context and context.get("system_prompt_override"):
+            system_content = context["system_prompt_override"]
+        else:
+            system_content = self.system_prompt
+
+        # 注入 ResourceContextBuilder 产出的学习资源上下文
+        if context and context.get("resource_context"):
+            system_content += f"\n\n{context['resource_context']}"
 
         # 如果有上下文信息，追加到系统提示词
         if context:
@@ -94,14 +105,48 @@ class BaseAgent(ABC):
         """
         full_messages = self._build_messages(messages, context)
 
+        # 从 context 中提取场景类型（供 LLMRouter 使用）
+        scene_type = context.get("scene_type") if context else None
+        preferred = context.get("preferred_model") if context else None
+        # v2 新增：透传配额相关参数
+        tenant_id = context.get("tenant_id") if context else None
+        session_id = context.get("session_id") if context else None
+        user_id = context.get("user_id") if context else None
+
         try:
-            result = await self._call_llm(full_messages)
-            return {
+            result = await self._call_llm(
+                full_messages, scene_type=scene_type, preferred=preferred,
+                tenant_id=tenant_id, session_id=session_id, user_id=user_id,
+            )
+            response_data = {
                 "content": result.get("content", ""),
                 "agent_type": self.agent_type,
                 "model": result.get("model", settings.OPENAI_MODEL),
                 "tokens": result.get("usage", {}),
             }
+
+            # 如果是降级模式，使用 demo_reply
+            if result.get("degraded"):
+                demo_content = self._demo_reply(full_messages)
+                response_data["content"] = demo_content
+                response_data["model"] = "demo-rule-engine"
+
+            # 附加 fallback 信息
+            fallback_info = result.get("fallback_info")
+            if fallback_info:
+                response_data["model_fallback"] = True
+                response_data["fallback_info"] = fallback_info
+            else:
+                response_data["model_fallback"] = False
+
+            # 透传 context 中的 citations 和 context_summary
+            if context:
+                if context.get("citations"):
+                    response_data["citations"] = context["citations"]
+                if context.get("context_summary"):
+                    response_data["context_summary"] = context["context_summary"]
+
+            return response_data
         except Exception as e:
             logger.error(f"Agent {self.agent_type} 执行失败: {e}")
             return {
@@ -120,6 +165,9 @@ class BaseAgent(ABC):
         """
         流式执行：逐步yield LLM的输出token
 
+        通过 LLMRouter 实现多模型路由与自动 fallback。
+        无任何 API Key 时降级为 _demo_reply() 规则引擎。
+
         Args:
             messages: 对话消息列表
             context: 上下文信息
@@ -129,48 +177,32 @@ class BaseAgent(ABC):
         """
         full_messages = self._build_messages(messages, context)
 
-        if not settings.OPENAI_API_KEY:
-            # 无API Key时回退为同步执行
+        # 从 context 中提取场景类型
+        scene_type = context.get("scene_type") if context else None
+        preferred = context.get("preferred_model") if context else None
+
+        from app.agents.llm_router import llm_router
+
+        # 检查是否有可用模型
+        if not llm_router.has_any_configured():
+            # 无 API Key 时回退为同步执行（demo 模式）
             result = await self.execute(messages, context)
             yield result.get("content", "")
             return
 
-        url = f"{settings.OPENAI_API_BASE}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": settings.OPENAI_MODEL,
-            "messages": full_messages,
-            "stream": True,
-            "temperature": 0.7,
-            "max_tokens": 2048,
-        }
-
+        # 通过 LLMRouter 流式调用
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                async with client.stream(
-                    "POST", url, headers=headers, json=payload
-                ) as response:
-                    response.raise_for_status()
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        data_str = line[6:]
-                        if data_str.strip() == "[DONE]":
-                            break
-                        try:
-                            chunk = json.loads(data_str)
-                            delta = chunk.get("choices", [{}])[0].get("delta", {})
-                            content = delta.get("content", "")
-                            if content:
-                                yield content
-                        except json.JSONDecodeError:
-                            continue
+            async for chunk in llm_router.call_llm_stream(
+                full_messages,
+                scene_type=scene_type,
+                preferred=preferred,
+            ):
+                yield chunk
         except Exception as e:
             logger.error(f"Agent {self.agent_type} 流式执行失败: {e}")
-            yield "抱歉，处理您的请求时出现了问题，请稍后重试。"
+            # 降级为 demo_reply
+            demo_content = self._demo_reply(full_messages)
+            yield demo_content
 
     def _demo_reply(self, messages: List[Dict[str, str]]) -> str:
         """
@@ -321,54 +353,53 @@ class BaseAgent(ABC):
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 2048,
+        scene_type: Optional[str] = None,
+        preferred: Optional[str] = None,
+        tenant_id: Optional[int] = None,
+        session_id: Optional[int] = None,
+        user_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
-        调用 OpenAI 兼容的 LLM API
+        通过 LLMRouter 调用 LLM（支持多模型路由与自动 fallback）
+
+        v2 改造: 透传 tenant_id/session_id/user_id 用于配额计量
 
         Args:
             messages: 消息列表（含系统提示词）
             temperature: 生成温度
             max_tokens: 最大生成token数
+            scene_type: 场景类型（供 LLMRouter 选择偏好模型）
+            preferred: 首选 provider 名称
+            tenant_id: 租户ID（用于配额检查）
+            session_id: 会话ID
+            user_id: 用户ID
 
         Returns:
-            LLM响应结果
+            LLM响应结果 {content, model, usage, degraded, fallback_info}
         """
-        if not settings.OPENAI_API_KEY:
+        from app.agents.llm_router import llm_router
+
+        # 检查是否有任何已配置的模型
+        if not llm_router.has_any_configured():
             # Demo 模式：基于规则引擎给出有意义的回复
             demo_content = self._demo_reply(messages)
             return {
                 "content": demo_content,
                 "model": "demo-rule-engine",
                 "usage": {},
+                "degraded": True,
+                "fallback_info": None,
             }
 
-        url = f"{settings.OPENAI_API_BASE}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": settings.OPENAI_MODEL,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-
-        choice = data.get("choices", [{}])[0]
-        content = choice.get("message", {}).get("content", "")
-        usage = data.get("usage", {})
-
-        return {
-            "content": content,
-            "model": data.get("model", settings.OPENAI_MODEL),
-            "usage": {
-                "prompt_tokens": usage.get("prompt_tokens", 0),
-                "completion_tokens": usage.get("completion_tokens", 0),
-                "total_tokens": usage.get("total_tokens", 0),
-            },
-        }
+        # 通过 LLMRouter 调用（内部自动 fallback + 配额检查）
+        result = await llm_router.call_llm(
+            messages,
+            scene_type=scene_type,
+            preferred=preferred,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tenant_id=tenant_id,
+            session_id=session_id,
+            user_id=user_id,
+        )
+        return result

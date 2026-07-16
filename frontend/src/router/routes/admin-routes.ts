@@ -68,6 +68,15 @@ export const adminRoutes: RouteRecordRaw[] = [
           requiresAuth: true,
         },
       },
+      {
+        path: 'quota',
+        name: 'AdminQuota',
+        component: () => import('@/views/admin/QuotaDashboard.vue'),
+        meta: {
+          title: '配额管理',
+          requiresAuth: true,
+        },
+      },
     ],
   },
 ]
