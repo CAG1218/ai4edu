@@ -15,22 +15,22 @@
       text-color="rgba(255, 255, 255, 0.8)"
       active-text-color="#FFFFFF"
     >
-      <el-menu-item index="/scene/classroom/dashboard" @click="navigateTo('/scene/classroom/dashboard')">
+      <el-menu-item index="/scene/classroom/dashboard">
         <el-icon><School /></el-icon>
         <template #title>课堂模式</template>
       </el-menu-item>
 
-      <el-menu-item index="/scene/self_study/dashboard" @click="navigateTo('/scene/self_study/dashboard')">
+      <el-menu-item index="/scene/self_study/dashboard">
         <el-icon><Reading /></el-icon>
         <template #title>自习模式</template>
       </el-menu-item>
 
-      <el-menu-item index="/scene/exam/dashboard" @click="navigateTo('/scene/exam/dashboard')">
+      <el-menu-item index="/scene/exam/dashboard">
         <el-icon><EditPen /></el-icon>
         <template #title>考前模式</template>
       </el-menu-item>
 
-      <el-menu-item index="/scene/discussion/dashboard" @click="navigateTo('/scene/discussion/dashboard')">
+      <el-menu-item index="/scene/discussion/dashboard">
         <el-icon><ChatDotRound /></el-icon>
         <template #title>讨论模式</template>
       </el-menu-item>
