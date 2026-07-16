@@ -9,7 +9,7 @@
         <span v-if="graphStore.currentGraph" class="graph-detail__selected-node">
           当前知识点：{{ graphStore.currentGraph.name }}
         </span>
-        <el-button type="primary" :disabled="!graphStore.currentGraph" @click="editorVisible = true">
+        <el-button type="primary" :disabled="!graphStore.currentGraph" @click="openEditor('overview')">
           <el-icon><Edit /></el-icon>
           协作编辑
         </el-button>
@@ -19,6 +19,11 @@
     <el-tabs v-model="activeTab" type="border-card">
       <!-- Tab1: 概览 -->
       <el-tab-pane label="概览" name="overview">
+        <div class="graph-detail__tab-actions">
+          <el-button type="primary" :disabled="!selectedNodeId" @click="openEditor('overview')">
+            <el-icon><Edit /></el-icon> 编辑概览
+          </el-button>
+        </div>
         <el-descriptions :column="2" border v-loading="graphStore.loading">
           <el-descriptions-item label="学科">{{ currentSubject?.name }}</el-descriptions-item>
           <el-descriptions-item label="知识点数量">{{ currentSubject?.node_count || 0 }}</el-descriptions-item>
@@ -52,6 +57,11 @@
 
       <!-- Tab2: 关联资源 -->
       <el-tab-pane label="关联资源" name="resources">
+        <div class="graph-detail__tab-actions">
+          <el-button type="primary" :disabled="!selectedNodeId" @click="openEditor('resources')">
+            上传或编辑资源
+          </el-button>
+        </div>
         <el-table :data="nodeResources" empty-text="暂无关联资源" stripe>
           <el-table-column prop="title" label="资源名称" />
           <el-table-column prop="resource_type" label="类型" width="100">
@@ -69,6 +79,11 @@
 
       <!-- Tab3: 关联关系 -->
       <el-tab-pane label="关联关系" name="relations">
+        <div class="graph-detail__tab-actions">
+          <el-button type="primary" :disabled="!selectedNodeId" @click="openEditor('relations')">
+            构建或编辑关系
+          </el-button>
+        </div>
         <ForceGraph
           :nodes="graphStore.neighborNodes.nodes"
           :links="graphStore.neighborNodes.links"
@@ -85,7 +100,10 @@
       <!-- Tab4: 认知目标 -->
       <el-tab-pane label="认知目标" name="cognitive">
         <div v-if="selectedNodeId" class="graph-detail__cognitive">
-          <h3>{{ graphStore.currentGraph?.name || selectedNodeId }} 的认知目标</h3>
+          <div class="graph-detail__section-header">
+            <h3>{{ graphStore.currentGraph?.name || selectedNodeId }} 的认知目标</h3>
+            <el-button type="primary" @click="openEditor('cognitive')">编辑认知目标</el-button>
+          </div>
           <div ref="radarRef" class="graph-detail__radar"></div>
         </div>
         <el-empty v-else description="请先选择一个知识点" />
@@ -93,6 +111,11 @@
 
       <!-- Tab5: 推荐 -->
       <el-tab-pane label="推荐" name="recommend">
+        <div class="graph-detail__tab-actions">
+          <el-button type="primary" :disabled="!selectedNodeId" @click="openEditor('recommendation')">
+            编辑推荐
+          </el-button>
+        </div>
         <div v-if="recommendations.length > 0" class="graph-detail__recommendations">
           <el-card
             v-for="rec in recommendations"
@@ -130,6 +153,9 @@
       <!-- Tab6: 任务 -->
       <el-tab-pane label="任务" name="tasks">
         <div v-if="selectedNodeId">
+          <div v-if="isTeacher" class="graph-detail__tab-actions">
+            <el-button type="primary" @click="openEditor('task')">布置任务</el-button>
+          </div>
           <el-table
             v-if="graphStore.nodeTasks.length > 0"
             :data="graphStore.nodeTasks"
@@ -184,6 +210,7 @@
       v-if="graphStore.currentGraph"
       v-model="editorVisible"
       :node="graphStore.currentGraph"
+      :initial-tab="editorInitialTab"
       :direct-apply="isTeacher"
       :can-review="isTeacher"
       :can-assign-task="isTeacher"
@@ -226,6 +253,7 @@ const selectedLink = ref<GraphLink | null>(null)
 const radarRef = ref<HTMLDivElement | null>(null)
 const mcDialogVisible = ref<boolean>(false)
 const editorVisible = ref<boolean>(false)
+const editorInitialTab = ref<string>('overview')
 
 const isTeacher = computed(() => authStore.isTeacher || authStore.isAdmin)
 
@@ -241,6 +269,12 @@ const currentSubject = computed(() =>
 
 function goBack(): void {
   router.push({ name: 'GraphSquare' })
+}
+
+function openEditor(tab: string): void {
+  if (!graphStore.currentGraph) return
+  editorInitialTab.value = tab
+  editorVisible.value = true
 }
 
 function formatSize(bytes: number): string {
@@ -512,6 +546,23 @@ onMounted(async () => {
   &__selected-node {
     color: var(--color-text-secondary);
     font-size: 13px;
+  }
+
+  &__tab-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 24px;
+  }
+
+  &__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+
+    h3 {
+      margin-bottom: 0;
+    }
   }
 
   &__search-section {

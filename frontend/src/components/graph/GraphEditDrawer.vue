@@ -223,6 +223,7 @@ interface LinkedResource {
 const props = defineProps<{
   modelValue: boolean
   node: KnowledgeNode
+  initialTab?: string
   directApply: boolean
   canReview: boolean
   canAssignTask: boolean
@@ -264,6 +265,7 @@ const cognitiveDimensions = [
 ]
 
 async function initialize(): Promise<void> {
+  activeTab.value = props.initialTab || 'overview'
   overview.name = props.node.name || ''
   overview.description = props.node.description || ''
   let levels: Record<string, number> = {}
