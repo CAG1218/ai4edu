@@ -50,6 +50,7 @@
               shadow="hover"
               class="graph-square__card"
               @click="goToDetail(subject.id)"
+              @mouseenter="loadSubjectPreview(subject.id)"
             >
               <div class="graph-square__card-icon" :style="{ background: subject.color + '20', color: subject.color }">
                 <el-icon :size="32"><component :is="subject.icon" /></el-icon>
@@ -195,10 +196,6 @@ async function loadSubjectPreview(subjectId: string): Promise<void> {
 
 onMounted(async () => {
   await graphStore.loadSquareStats()
-  // 预加载各学科前5个知识点
-  for (const stat of graphStore.squareStats) {
-    loadSubjectPreview(stat.id)
-  }
 })
 </script>
 

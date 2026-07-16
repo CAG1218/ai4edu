@@ -19,6 +19,8 @@ const api: AxiosInstance = axios.create({
 
 // 是否正在刷新Token
 let isRefreshing = false
+// Avoid stacking one toast for every concurrent request rejected by the limiter.
+let lastRateLimitNoticeAt = 0
 // 重试请求队列
 let retryQueue: Array<{
   resolve: (token: string) => void
@@ -153,7 +155,13 @@ api.interceptors.response.use(
         ElMessage.error(data.message || '数据校验失败')
         break
       case 429:
-        ElMessage.warning('请求过于频繁，请稍后再试')
+        if (Date.now() - lastRateLimitNoticeAt > 3000) {
+          lastRateLimitNoticeAt = Date.now()
+          ElMessage.warning({
+            message: '请求过于频繁，请稍后再试',
+            grouping: true,
+          })
+        }
         break
       case 500:
         ElMessage.error('服务器内部错误')
