@@ -17,6 +17,7 @@ from app.services.search_service import search_service
 router = APIRouter()
 
 
+@router.get("", include_in_schema=False)
 @router.get("/", summary="获取笔记列表")
 async def list_notes(
     pagination: PaginationParams = Depends(),
@@ -39,6 +40,7 @@ async def list_notes(
     return APIResponse(data=result.model_dump(), message="success")
 
 
+@router.post("", include_in_schema=False)
 @router.post("/", summary="创建笔记")
 async def create_note(
     note_data: NoteCreate,

@@ -127,6 +127,70 @@ class AntiMisconceptionAgent(BaseAgent):
 
         return detected
 
+    def suggest_for_node(
+        self,
+        name: str,
+        description: str,
+        subject: str,
+    ) -> List[Dict[str, Any]]:
+        """
+        基于节点名称和描述，匹配 COMMON_MISCONCEPTIONS 规则库，
+        返回 AI 标注建议列表（含置信度）
+
+        Args:
+            name: 知识节点名称
+            description: 知识节点描述
+            subject: 知识节点所属学科（英文 ID）
+
+        Returns:
+            匹配到的 misconception 建议列表，每项包含 confidence 字段
+        """
+        suggestions: List[Dict[str, Any]] = []
+        combined_text = f"{name} {description}".lower()
+
+        for mc in COMMON_MISCONCEPTIONS:
+            # 先按 subject 过滤
+            if mc.get("subject", "").lower() != subject.lower():
+                continue
+
+            keywords = mc.get("keywords", [])
+            if not keywords:
+                continue
+
+            # 统计匹配到的关键词数
+            matched_keywords = [
+                kw for kw in keywords if kw.lower() in combined_text
+            ]
+
+            # 也检查 topic 是否出现在 name 中
+            topic = mc.get("topic", "")
+            topic_matched = topic and topic in name
+
+            if not matched_keywords and not topic_matched:
+                continue
+
+            # 计算置信度 = 匹配关键词数 / 总关键词数
+            confidence = len(matched_keywords) / len(keywords) if keywords else 0.0
+
+            # 如果 topic 也匹配，增加置信度
+            if topic_matched:
+                confidence = min(confidence + 0.2, 1.0)
+
+            # 低于 0.5 置信度不展示
+            if confidence < 0.5:
+                continue
+
+            suggestions.append({
+                "misconception": mc.get("misconception", ""),
+                "correction": mc.get("correction", ""),
+                "topic": topic,
+                "keywords": keywords,
+                "subject": mc.get("subject", subject),
+                "confidence": round(confidence, 2),
+            })
+
+        return suggestions
+
     async def execute(
         self,
         messages: List[Dict[str, str]],

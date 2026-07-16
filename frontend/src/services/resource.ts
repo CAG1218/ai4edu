@@ -38,6 +38,15 @@ export interface PaginatedResources {
   total_pages: number
 }
 
+export interface ResourceUploadResult {
+  id: number
+  title: string
+  resource_type: string
+  file_size?: number
+  file_key?: string
+  created_at?: string
+}
+
 // ============ API 方法 ============
 
 export const resourceApi = {
@@ -51,7 +60,7 @@ export const resourceApi = {
       course_id?: number
     },
     onProgress?: (percent: number) => void,
-  ): Promise<unknown> {
+  ): Promise<ResourceUploadResult> {
     const formData = new FormData()
     formData.append('file', file)
     if (options?.title) formData.append('title', options.title)
@@ -67,6 +76,12 @@ export const resourceApi = {
         }
       },
     })
+    return response.data
+  },
+
+  /** 创建网页链接资源 */
+  async createLink(data: { title: string; url: string; description?: string }): Promise<ResourceDetail> {
+    const response = await api.post('/resources/link', data)
     return response.data
   },
 

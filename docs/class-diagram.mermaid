@@ -1,0 +1,157 @@
+classDiagram
+    direction TB
+
+    class GraphService {
+        -_driver: AsyncDriver
+        +get_square_stats(tenant_id?) List~Dict~
+        +calculate_completeness(subject) float
+        +get_node_detail(node_id) Dict?
+        +get_neighbors(node_id, depth, limit) Dict
+        +get_node_resources(node_id) List~Dict~
+        +get_recommendations(node_id, limit) List~Dict~
+        +search_nodes(query, subject?, limit) List~Dict~
+        +create_node(data) Dict
+        +update_node(node_id, data) Dict?
+        +create_relationship(from, to, type, label) Dict?
+        +delete_relationship(from, to, type) bool
+        +get_cognitive_goals(node_id) Dict
+        +get_misconceptions(node_id) List~Dict~
+        +add_misconception(node_id, data, user_id) Dict
+        +update_misconception(node_id, mc_id, data) Dict?
+        +delete_misconception(node_id, mc_id) bool
+        +get_cross_subject_graph(subjects, min_strength, max_nodes) Dict
+        +get_node_tasks(node_id, user_id?) List~Dict~
+        +get_subject_cognitive_avg(subject) List~float~
+    }
+
+    class AntiMisconceptionAgent {
+        +agent_type: str
+        +system_prompt: str
+        +detect_misconceptions(user_input) List~Dict~
+        +suggest_for_node(name, description, subject) List~Dict~
+        +execute(messages, context) Dict
+    }
+
+    class COMMON_MISCONCEPTIONS {
+        <<static rule base>>
+        +List~Dict~ rules (10 items)
+    }
+
+    class SquareStatItem {
+        +id: str
+        +name: str
+        +icon: str
+        +color: str
+        +node_count: int
+        +completeness: float
+        +misconception_count: int
+    }
+
+    class MisconceptionItem {
+        +mc_id: str
+        +misconception: str
+        +correction: str
+        +topic: str
+        +keywords: List~str~
+        +source: Literal
+        +annotated_by: int?
+        +annotated_at: datetime
+        +confidence: float
+    }
+
+    class MisconceptionCreate {
+        +misconception: str
+        +correction: str
+        +topic: str
+        +keywords: List~str~
+    }
+
+    class MisconceptionUpdate {
+        +misconception: str?
+        +correction: str?
+        +topic: str?
+        +keywords: List~str~?
+    }
+
+    class MisconceptionSuggestion {
+        +misconception: str
+        +correction: str
+        +topic: str
+        +keywords: List~str~
+        +subject: str
+        +confidence: float
+    }
+
+    class CrossSubjectResponse {
+        +nodes: List~CrossSubjectNode~
+        +links: List~CrossSubjectLink~
+        +stats: CrossSubjectStats
+    }
+
+    class CrossSubjectNode {
+        +id: str
+        +name: str
+        +subject: str
+        +description: str?
+        +has_misconception: bool
+        +degree: int
+    }
+
+    class CrossSubjectLink {
+        +source: str
+        +target: str
+        +type: str
+        +label: str
+        +is_cross: bool
+        +strength: float
+        +strength_label: str
+    }
+
+    class CrossSubjectStats {
+        +total_nodes: int
+        +total_links: int
+        +cross_links: int
+        +avg_strength: float
+        +subject_distribution: Dict
+    }
+
+    class NodeTask {
+        +task_id: str
+        +name: str
+        +type: str
+        +status: str
+        +due_date: datetime?
+        +source: str
+    }
+
+    class CognitiveGoalResponse {
+        +dimensions: List~str~
+        +dimension_keys: List~str~
+        +values: List~float~
+        +subject_avg: List~float~?
+        +node_name: str
+    }
+
+    class Diagnosis {
+        +id: int
+        +user_id: int
+        +diagnosis_type: str
+        +title: str
+        +status: str
+        +knowledge_points: JSON
+        +completed_at: datetime?
+    }
+
+    GraphService ..> SquareStatItem : returns
+    GraphService ..> MisconceptionItem : returns
+    GraphService ..> CrossSubjectResponse : returns
+    GraphService ..> NodeTask : returns
+    GraphService ..> CognitiveGoalResponse : returns
+    GraphService ..> Diagnosis : reads
+    AntiMisconceptionAgent ..> COMMON_MISCONCEPTIONS : uses
+    AntiMisconceptionAgent ..> MisconceptionSuggestion : returns
+    MisconceptionCreate --> MisconceptionItem : creates
+    MisconceptionUpdate --> MisconceptionItem : modifies
+    CrossSubjectResponse *-- CrossSubjectNode
+    CrossSubjectResponse *-- CrossSubjectLink
+    CrossSubjectResponse *-- CrossSubjectStats

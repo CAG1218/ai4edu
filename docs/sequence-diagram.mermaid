@@ -1,0 +1,30 @@
+sequenceDiagram
+    actor User as 用户
+    participant Vue as GraphSquareView
+    participant Store as useGraphStore
+    participant API as graphApi
+    participant Backend as /graphs/square
+    participant Service as graph_service
+    participant Neo4j as Neo4j
+
+    User->>Vue: onMounted → loadSquareStats()
+    Vue->>Store: loadSquareStats()
+    Store->>API: GET /graphs/square
+    API->>Backend: HTTP GET (含 JWT)
+    Backend->>Backend: get_current_user → 验证JWT
+    Backend->>Service: get_square_stats()
+    
+    loop 12 学科
+        Service->>Neo4j: MATCH (n:KnowledgeNode {subject:$s}) RETURN count(n)
+        Neo4j-->>Service: node_count
+        Service->>Service: calculate_completeness_v2(subject)
+        Note over Service: 4维加权: 描述20%+认知20%+关系30%+资源30%
+        Service->>Neo4j: MATCH (n:KnowledgeNode {subject:$s}) WHERE n.has_misconception=true RETURN count(n)
+        Neo4j-->>Service: misconception_count
+    end
+
+    Service-->>Backend: List[SquareStatItem]
+    Backend-->>API: APIResponse(data=stats)
+    API-->>Store: SquareStat[] (含 misconception_count)
+    Store->>Store: squareStats.value = data
+    Vue-->>User: 渲染12学科卡片（含⚠ N个易误解知识点）

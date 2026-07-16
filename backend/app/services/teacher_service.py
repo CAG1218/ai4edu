@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.lesson_plan_agent import LessonPlanAgent
 from app.core.exceptions import NotFoundException, PermissionDeniedException
 from app.models.lesson_plan import LessonPlan
+from app.models.course import Course, CourseEnrollment
+from app.models.resource import Resource
 from app.models.user import User
 from app.models.diagnosis import Diagnosis
 from app.schemas.common import PaginatedResponse, PaginationParams
@@ -69,12 +71,36 @@ class TeacherService:
         recent_plans = recent_plans_result.scalars().all()
 
         # 学生总数（简化统计）
-        student_count = 0  # 后续可从课程-学生关系统计
+        course_count_stmt = select(func.count(Course.id)).where(
+            and_(Course.teacher_id == teacher_id, Course.tenant_id == tenant_id, Course.is_active == True)
+        )
+        course_count = (await self.db.execute(course_count_stmt)).scalar() or 0
+
+        student_count_stmt = (
+            select(func.count(func.distinct(CourseEnrollment.user_id)))
+            .join(Course, Course.id == CourseEnrollment.course_id)
+            .where(
+                and_(
+                    Course.teacher_id == teacher_id,
+                    Course.tenant_id == tenant_id,
+                    Course.is_active == True,
+                    CourseEnrollment.dropped_at.is_(None),
+                )
+            )
+        )
+        student_count = (await self.db.execute(student_count_stmt)).scalar() or 0
+
+        resource_count_stmt = select(func.count(Resource.id)).where(
+            and_(Resource.tenant_id == tenant_id, Resource.uploader_id == teacher_id, Resource.is_active == True)
+        )
+        resource_count = (await self.db.execute(resource_count_stmt)).scalar() or 0
 
         return {
             "teacher_id": teacher_id,
             "lesson_plan_count": plan_count,
             "student_count": student_count,
+            "course_count": course_count,
+            "resource_count": resource_count,
             "recent_lesson_plans": [
                 {
                     "id": p.id,
@@ -85,6 +111,28 @@ class TeacherService:
                 for p in recent_plans
             ],
         }
+
+    async def list_courses(self, tenant_id: int, teacher_id: int) -> List[Dict[str, Any]]:
+        """Return active courses owned by the current teacher."""
+        stmt = (
+            select(Course)
+            .where(
+                and_(Course.tenant_id == tenant_id, Course.teacher_id == teacher_id, Course.is_active == True)
+            )
+            .order_by(desc(Course.updated_at))
+        )
+        courses = (await self.db.execute(stmt)).scalars().all()
+        return [
+            {
+                "id": course.id,
+                "name": course.name,
+                "subject": course.subject,
+                "grade": course.grade,
+                "semester": course.semester,
+                "description": course.description,
+            }
+            for course in courses
+        ]
 
     async def list_lesson_plans(
         self,
@@ -151,6 +199,124 @@ class TeacherService:
             page_size=pagination.page_size,
         )
 
+    async def generate_lesson_plan_preview(
+        self,
+        course_name: str,
+        objectives: Optional[str],
+        knowledge_points: List[str],
+        duration: int,
+        student_level: str,
+        user_id: int,
+        tenant_id: int,
+    ) -> Dict[str, Any]:
+        """Generate a structured preview without persisting a lesson plan."""
+        objective_text = (objectives or "").replace("。", "\n").replace("；", "\n")
+        objective_list = [item.strip() for item in objective_text.splitlines() if item.strip()]
+        if not objective_list:
+            objective_list = [
+                "理解课程核心概念",
+                "掌握关键知识与方法",
+                "能够运用所学知识解决问题",
+            ]
+
+        level_map = {
+            "beginner": "基础",
+            "intermediate": "中等",
+            "advanced": "进阶",
+        }
+        try:
+            agent = LessonPlanAgent()
+            generated = await agent.generate_lesson_plan(
+                title=course_name,
+                subject=course_name,
+                duration_minutes=duration,
+                objectives=objective_list,
+                key_points=knowledge_points,
+                student_level=level_map.get(student_level, student_level),
+                context={"user_id": user_id, "tenant_id": tenant_id},
+            )
+            generated_content = str(generated.get("content") or "").strip()
+        except Exception as exc:
+            logger.warning("lesson_plan_preview_fallback: %s", exc)
+            generated_content = ""
+
+        if generated_content:
+            steps = [{
+                "title": "AI生成教学方案",
+                "duration": duration,
+                "content": generated_content,
+            }]
+        else:
+            steps = [
+                {"title": "导入新课", "duration": 10, "content": "通过真实情境引入主题，建立新旧知识联系。"},
+                {"title": "概念讲解", "duration": max(15, duration // 3), "content": "讲解核心概念，并结合示例帮助学生形成理解。"},
+                {"title": "互动练习", "duration": max(10, duration // 4), "content": "安排分层练习与讨论，及时检查学习效果。"},
+                {"title": "总结提升", "duration": 10, "content": "回顾重点，组织学生归纳知识结构并提出问题。"},
+            ]
+
+        return {
+            "title": f"{course_name} — 教案",
+            "objectives": objective_list,
+            "steps": steps,
+            "homework": ["完成本节课配套练习", "整理本节课知识框架"],
+        }
+
+    async def get_or_create_course(
+        self,
+        tenant_id: int,
+        teacher_id: int,
+        course_name: str,
+    ) -> int:
+        """Resolve a teacher course by name, creating a minimal course when needed."""
+        stmt = select(Course).where(
+            and_(
+                Course.tenant_id == tenant_id,
+                Course.teacher_id == teacher_id,
+                Course.name == course_name,
+                Course.is_active == True,
+            )
+        )
+        existing = (await self.db.execute(stmt)).scalars().first()
+        if existing:
+            return existing.id
+
+        lower_name = course_name.lower()
+        subject_aliases = {
+            "math": ("数学", "微积分", "代数", "几何", "math"),
+            "physics": ("物理", "physics"),
+            "chemistry": ("化学", "chemistry"),
+            "biology": ("生物", "biology"),
+            "cs": ("计算机", "编程", "算法", "computer"),
+            "chinese": ("语文", "中文", "chinese"),
+            "english": ("英语", "english"),
+            "history": ("历史", "history"),
+            "geography": ("地理", "geography"),
+            "politics": ("政治", "politics"),
+            "pe": ("体育", "physical education"),
+            "art": ("艺术", "美术", "art"),
+        }
+        subject = "general"
+        for subject_id, aliases in subject_aliases.items():
+            if any(alias.lower() in lower_name for alias in aliases):
+                subject = subject_id
+                break
+
+        now = datetime.utcnow()
+        semester = f"{now.year}-{'spring' if now.month <= 7 else 'fall'}"
+        course = Course(
+            tenant_id=tenant_id,
+            name=course_name,
+            subject=subject,
+            grade="未设置",
+            semester=semester,
+            description="由AI备课助手在保存教案时自动创建",
+            teacher_id=teacher_id,
+            is_active=True,
+        )
+        self.db.add(course)
+        await self.db.flush()
+        return course.id
+
     async def create_lesson_plan(
         self,
         tenant_id: int,
@@ -161,6 +327,7 @@ class TeacherService:
         content: Optional[str] = None,
         materials: Optional[List[str]] = None,
         duration_minutes: int = 45,
+        ai_generated: bool = False,
     ) -> Dict[str, Any]:
         """
         创建教案
@@ -187,7 +354,7 @@ class TeacherService:
             content=content,
             materials=json.dumps(materials or [], ensure_ascii=False),
             duration_minutes=duration_minutes,
-            ai_generated=False,
+            ai_generated=ai_generated,
             status="draft",
             version=1,
         )
@@ -421,6 +588,47 @@ class TeacherService:
         avg_result = await self.db.execute(avg_score_stmt)
         avg_score = avg_result.scalar() or 0.0
 
+        detail_stmt = select(Diagnosis).where(
+            and_(Diagnosis.tenant_id == tenant_id, Diagnosis.status == "completed")
+        )
+        if course_id:
+            detail_stmt = detail_stmt.where(Diagnosis.course_id == course_id)
+        diagnoses = (await self.db.execute(detail_stmt)).scalars().all()
+
+        weakness_scores: Dict[str, List[float]] = {}
+        suggestions: List[str] = []
+        for diagnosis in diagnoses:
+            try:
+                weaknesses = json.loads(diagnosis.weaknesses or "[]")
+            except (json.JSONDecodeError, TypeError):
+                weaknesses = []
+            if isinstance(weaknesses, dict):
+                weaknesses = [weaknesses]
+            for item in weaknesses if isinstance(weaknesses, list) else []:
+                if isinstance(item, str):
+                    weakness_scores.setdefault(item, []).append(float(diagnosis.score or 0))
+                elif isinstance(item, dict):
+                    name = str(item.get("name") or item.get("knowledge_point") or "").strip()
+                    if name:
+                        mastery = item.get("mastery", item.get("score", diagnosis.score or 0))
+                        weakness_scores.setdefault(name, []).append(float(mastery or 0))
+            try:
+                recommendations = json.loads(diagnosis.recommendations or "[]")
+            except (json.JSONDecodeError, TypeError):
+                recommendations = []
+            if isinstance(recommendations, str):
+                recommendations = [recommendations]
+            for recommendation in recommendations if isinstance(recommendations, list) else []:
+                text = recommendation if isinstance(recommendation, str) else recommendation.get("description") or recommendation.get("title")
+                if text and text not in suggestions:
+                    suggestions.append(str(text))
+
+        knowledge_distribution = [
+            {"name": name, "mastery": round(sum(values) / len(values), 1)}
+            for name, values in weakness_scores.items()
+        ]
+        knowledge_distribution.sort(key=lambda item: item["mastery"])
+
         return {
             "time_range": time_range,
             "total_diagnoses": total_diagnoses,
@@ -429,7 +637,9 @@ class TeacherService:
                 "active_students": 0,  # 后续从ClickHouse统计
                 "total_students": 0,
             },
-            "knowledge_distribution": [],  # 后续从诊断数据聚合
+            "knowledge_distribution": knowledge_distribution,
+            "weak_points": knowledge_distribution[:10],
+            "suggestions": suggestions[:8],
         }
 
     def _plan_to_dict(self, plan: LessonPlan) -> Dict[str, Any]:

@@ -1,12 +1,22 @@
 <template>
-  <el-card shadow="hover" class="node-card" @click="$emit('click', node)">
+  <el-card
+    shadow="hover"
+    :class="['node-card', { 'node-card--selected': selected }]"
+    @click="$emit('click', node)"
+  >
     <div class="node-card__header">
       <span class="node-card__dot" :style="{ background: subjectColor }" />
       <span class="node-card__name">{{ node.name || node.id }}</span>
+      <!-- Misconception 角标 -->
+      <MisconceptionBadge
+        v-if="node.has_misconception"
+        :misconceptions="node.misconceptions || []"
+        @open-dialog="$emit('open-misconception', node)"
+      />
     </div>
     <p v-if="node.description" class="node-card__desc">{{ node.description }}</p>
     <div class="node-card__footer">
-      <el-tag v-if="node.subject" size="small" type="info">{{ node.subject }}</el-tag>
+      <el-tag v-if="node.subject" size="small" type="info">{{ subjectName }}</el-tag>
     </div>
   </el-card>
 </template>
@@ -14,23 +24,39 @@
 <script setup lang="ts">
 /**
  * AI4Edu 知识点卡片组件
+ * 支持 misconception 角标展示，subject 中英文映射
  */
 import { computed } from 'vue'
+import MisconceptionBadge from './MisconceptionBadge.vue'
 
 interface KnowledgeNode {
   id: string
   name?: string
   subject?: string
   description?: string
+  has_misconception?: boolean
+  misconceptions?: Array<{
+    mc_id: string
+    misconception: string
+    correction: string
+    topic: string
+    keywords: string[]
+    source: string
+    annotated_by: number | null
+    annotated_at: string
+    confidence: number
+  }>
   [key: string]: unknown
 }
 
 const props = defineProps<{
   node: KnowledgeNode
+  selected?: boolean
 }>()
 
 defineEmits<{
   (e: 'click', node: KnowledgeNode): void
+  (e: 'open-misconception', node: KnowledgeNode): void
 }>()
 
 const subjectColorMap: Record<string, string> = {
@@ -48,16 +74,41 @@ const subjectColorMap: Record<string, string> = {
   art: '#AD1457',
 }
 
+const subjectNameMap: Record<string, string> = {
+  math: '数学',
+  physics: '物理学',
+  chemistry: '化学',
+  biology: '生物学',
+  cs: '计算机科学',
+  chinese: '语文',
+  english: '英语',
+  history: '历史',
+  geography: '地理',
+  politics: '政治',
+  pe: '体育',
+  art: '艺术',
+}
+
 const subjectColor = computed(() => subjectColorMap[props.node.subject || ''] || '#5B8FF9')
+const subjectName = computed(() => subjectNameMap[props.node.subject || ''] || props.node.subject || '')
 </script>
 
 <style lang="scss" scoped>
 .node-card {
   cursor: pointer;
   transition: transform 0.15s ease;
+  position: relative;
 
   &:hover {
     transform: translateY(-2px);
+  }
+
+  &--selected {
+    background: #e4e7ed;
+    border-color: #a8abb2;
+
+    .node-card__dot { background: #909399 !important; }
+    .node-card__name, .node-card__desc { color: #606266; }
   }
 
   &__header {
@@ -65,6 +116,7 @@ const subjectColor = computed(() => subjectColorMap[props.node.subject || ''] ||
     align-items: center;
     gap: 8px;
     margin-bottom: 6px;
+    position: relative;
   }
 
   &__dot {
