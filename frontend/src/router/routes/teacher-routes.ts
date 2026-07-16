@@ -89,9 +89,9 @@ export const teacherRoutes: RouteRecordRaw[] = [
       {
         path: 'ai-chat',
         name: 'TeacherAIChat',
-        component: () => import('@/views/agent/AgentChatView.vue'),
+        component: () => import('@/views/teacher/TeacherAIChatView.vue'),
         meta: {
-          title: 'AI 对话',
+          title: '教师 AI 助手',
           requiresAuth: true,
         },
       },

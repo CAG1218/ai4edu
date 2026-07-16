@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db, require_role
 from app.models.user import User
 from app.schemas.common import APIResponse, PaginationParams
+from app.schemas.teacher_ai import TeacherAIChatRequest, TeacherAIChatResponse
+from app.services.teacher_ai_service import TeacherAIService
 from app.services.teacher_service import TeacherService
 
 router = APIRouter()
@@ -94,6 +96,46 @@ async def list_teacher_courses(
         teacher_id=current_user.id,
     )
     return APIResponse(code=0, data=result, message="success")
+
+
+@router.get("/ai-chat/context", summary="获取教师AI助手材料概况")
+async def get_teacher_ai_context(
+    course_id: Optional[int] = Query(None, description="限定课程ID"),
+    current_user: User = Depends(require_role(["teacher", "admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse:
+    """返回当前教师可用于独立AI问答的课程和材料统计。"""
+    service = TeacherAIService(db)
+    try:
+        result = await service.get_context_summary(
+            tenant_id=current_user.tenant_id or 0,
+            teacher_id=current_user.id,
+            course_id=course_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return APIResponse(code=0, data=result, message="success")
+
+
+@router.post("/ai-chat/messages", response_model=APIResponse[TeacherAIChatResponse], summary="教师AI独立问答")
+async def send_teacher_ai_message(
+    request: TeacherAIChatRequest,
+    current_user: User = Depends(require_role(["teacher", "admin"])),
+    db: AsyncSession = Depends(get_db),
+) -> APIResponse[TeacherAIChatResponse]:
+    """基于当前教师教案和班级学情材料调用DeepSeek，不接入智能体中心会话。"""
+    service = TeacherAIService(db)
+    try:
+        result = await service.chat(
+            tenant_id=current_user.tenant_id or 0,
+            teacher_id=current_user.id,
+            request=request,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return APIResponse(code=0, data=TeacherAIChatResponse(**result), message="success")
 
 
 @router.post("/lesson-plans", summary="创建教案")
