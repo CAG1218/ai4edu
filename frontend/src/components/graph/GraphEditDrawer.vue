@@ -8,7 +8,7 @@
     @open="initialize"
   >
     <el-alert
-      :title="directApply ? '你的修改会立即生效' : '学生修改将在教师审核通过后生效'"
+      :title="directApply ? '你的修改会立即生效' : '修改将在教师或超级管理员审核通过后生效'"
       :type="directApply ? 'success' : 'warning'"
       :closable="false"
       show-icon

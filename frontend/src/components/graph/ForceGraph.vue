@@ -166,11 +166,13 @@ const props = withDefaults(defineProps<{
   height?: string
   crossSubjectMode?: boolean
   subjectColors?: Record<string, string>
+  selectedNodeId?: string | null
 }>(), {
   width: '100%',
   height: '600px',
   crossSubjectMode: false,
   subjectColors: () => ({}),
+  selectedNodeId: null,
 })
 
 const emit = defineEmits<{
@@ -257,6 +259,7 @@ function getNodeRadius(node: GraphNode): number {
 }
 
 function getNodeColor(node: GraphNode): string {
+  if (node.node_type !== 'subject' && props.selectedNodeId === node.id) return '#A8ABB2'
   if (node.color) return node.color
   return mergedColors.value[node.subject || node.subject_id || ''] || '#5B8FF9'
 }

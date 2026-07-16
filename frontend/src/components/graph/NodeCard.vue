@@ -1,5 +1,9 @@
 <template>
-  <el-card shadow="hover" class="node-card" @click="$emit('click', node)">
+  <el-card
+    shadow="hover"
+    :class="['node-card', { 'node-card--selected': selected }]"
+    @click="$emit('click', node)"
+  >
     <div class="node-card__header">
       <span class="node-card__dot" :style="{ background: subjectColor }" />
       <span class="node-card__name">{{ node.name || node.id }}</span>
@@ -47,6 +51,7 @@ interface KnowledgeNode {
 
 const props = defineProps<{
   node: KnowledgeNode
+  selected?: boolean
 }>()
 
 defineEmits<{
@@ -96,6 +101,14 @@ const subjectName = computed(() => subjectNameMap[props.node.subject || ''] || p
 
   &:hover {
     transform: translateY(-2px);
+  }
+
+  &--selected {
+    background: #e4e7ed;
+    border-color: #a8abb2;
+
+    .node-card__dot { background: #909399 !important; }
+    .node-card__name, .node-card__desc { color: #606266; }
   }
 
   &__header {

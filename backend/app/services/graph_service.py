@@ -510,6 +510,31 @@ class GraphService:
         result = await self._run(cypher, params)
         return result[0]["n"] if result else None
 
+    async def delete_node(self, node_id: str) -> bool:
+        """Delete a knowledge node and dependent graph-only records."""
+        existing = await self._run(
+            "MATCH (n:KnowledgeNode {id: $node_id}) RETURN n.id AS id",
+            {"node_id": node_id},
+        )
+        if not existing:
+            return False
+
+        await self._run(
+            "MATCH (c:GraphChangeRequest)-[:TARGETS]->(:KnowledgeNode {id: $node_id}) "
+            "DETACH DELETE c",
+            {"node_id": node_id},
+        )
+        await self._run(
+            "MATCH (:KnowledgeNode {id: $node_id})-[:HAS_TASK]->(t:GraphTask) "
+            "DETACH DELETE t",
+            {"node_id": node_id},
+        )
+        await self._run(
+            "MATCH (n:KnowledgeNode {id: $node_id}) DETACH DELETE n",
+            {"node_id": node_id},
+        )
+        return True
+
     async def create_relationship(
         self, from_id: str, to_id: str, rel_type: str = "RELATED", label: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:

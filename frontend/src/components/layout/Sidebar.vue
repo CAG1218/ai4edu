@@ -99,7 +99,6 @@ const currentSceneType = computed(() => {
 /** 功能菜单列表 */
 const featureMenus = computed(() => [
   { index: `/scene/${currentSceneType.value}/graphs`, icon: 'Connection', title: '知识图谱' },
-  { index: `/scene/${currentSceneType.value}/graph/cross-subject`, icon: 'Share', title: '跨学科关联图谱' },
   { index: `/scene/${currentSceneType.value}/notes`, icon: 'EditPen', title: '智能笔记' },
   { index: `/scene/${currentSceneType.value}/resources`, icon: 'Folder', title: '资源管理' },
   { index: `/scene/${currentSceneType.value}/buddy`, icon: 'Sunny', title: 'AI 学伴' },

@@ -13,6 +13,16 @@
           <el-icon><Edit /></el-icon>
           协作编辑
         </el-button>
+        <el-button
+          v-if="canManageKnowledgeNodes"
+          type="danger"
+          plain
+          :disabled="!graphStore.currentGraph"
+          @click="deleteSelectedNode"
+        >
+          <el-icon><Delete /></el-icon>
+          删除知识点
+        </el-button>
       </div>
     </div>
 
@@ -20,8 +30,20 @@
       <!-- Tab1: 概览 -->
       <el-tab-pane label="概览" name="overview">
         <div class="graph-detail__tab-actions">
+          <el-button v-if="canManageKnowledgeNodes" type="success" @click="newNodeVisible = true">
+            <el-icon><Plus /></el-icon> 新增知识点
+          </el-button>
           <el-button type="primary" :disabled="!selectedNodeId" @click="openEditor('overview')">
             <el-icon><Edit /></el-icon> 编辑概览
+          </el-button>
+          <el-button
+            v-if="canManageKnowledgeNodes"
+            type="danger"
+            plain
+            :disabled="!selectedNodeId"
+            @click="deleteSelectedNode"
+          >
+            <el-icon><Delete /></el-icon> 删除知识点
           </el-button>
         </div>
         <el-descriptions :column="2" border v-loading="graphStore.loading">
@@ -48,6 +70,7 @@
               v-for="node in graphStore.searchResults"
               :key="node.id"
               :node="node"
+              :selected="selectedNodeId === node.id"
               @click="selectNode(node)"
               @open-misconception="openMisconceptionDialog(node)"
             />
@@ -203,6 +226,7 @@
       <ForceGraph
         :nodes="graphStore.subjectGraph.nodes"
         :links="graphStore.subjectGraph.links"
+        :selected-node-id="selectedNodeId"
         height="460px"
         @node-click="handleGraphNodeClick"
         @node-hover="handleNodeHover"
@@ -227,11 +251,36 @@
       v-model="editorVisible"
       :node="graphStore.currentGraph"
       :initial-tab="editorInitialTab"
-      :direct-apply="isTeacher"
-      :can-review="isTeacher"
-      :can-assign-task="isTeacher"
+      :direct-apply="canManageKnowledgeNodes"
+      :can-review="canManageKnowledgeNodes"
+      :can-assign-task="canManageKnowledgeNodes"
       @changed="handleEditorChanged"
     />
+
+    <el-dialog v-model="newNodeVisible" title="新增知识点" width="560px" destroy-on-close>
+      <el-form label-position="top">
+        <el-form-item label="所属学科">
+          <el-input :model-value="currentSubject?.name || id" disabled />
+        </el-form-item>
+        <el-form-item label="知识点名称" required>
+          <el-input v-model="newNodeForm.name" maxlength="200" placeholder="请输入知识点名称" />
+        </el-form-item>
+        <el-form-item label="知识点概览">
+          <el-input
+            v-model="newNodeForm.description"
+            type="textarea"
+            :rows="5"
+            maxlength="2000"
+            show-word-limit
+            placeholder="请输入知识点说明"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="newNodeVisible = false">取消</el-button>
+        <el-button type="primary" :loading="creatingNode" @click="createKnowledgeNode">新增知识点</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -241,9 +290,10 @@
  * 六维Tab：概览/关联资源/关联关系/认知目标/推荐/任务
  * 支持 misconception 标注管理、真实任务数据、认知目标均值对比
  */
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, watch, onMounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Edit } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { ArrowLeft, Delete, Edit, Plus } from '@element-plus/icons-vue'
 import { useGraphStore } from '@/stores/graph'
 import { useAuthStore } from '@/stores/auth'
 import { graphApi } from '@/services/graph'
@@ -270,8 +320,14 @@ const radarRef = ref<HTMLDivElement | null>(null)
 const mcDialogVisible = ref<boolean>(false)
 const editorVisible = ref<boolean>(false)
 const editorInitialTab = ref<string>('overview')
+const newNodeVisible = ref<boolean>(false)
+const creatingNode = ref<boolean>(false)
+const newNodeForm = reactive({ name: '', description: '' })
 
-const isTeacher = computed(() => authStore.isTeacher || authStore.isAdmin)
+const canManageKnowledgeNodes = computed(() =>
+  authStore.userRole === 'teacher' || authStore.userRole === 'super_admin'
+)
+const isTeacher = canManageKnowledgeNodes
 
 const subjectNameMap: Record<string, string> = {
   math: '数学', physics: '物理学', chemistry: '化学', biology: '生物学',
@@ -291,6 +347,64 @@ function openEditor(tab: string): void {
   if (!graphStore.currentGraph) return
   editorInitialTab.value = tab
   editorVisible.value = true
+}
+
+async function createKnowledgeNode(): Promise<void> {
+  if (!newNodeForm.name.trim()) {
+    ElMessage.warning('请输入知识点名称')
+    return
+  }
+
+  creatingNode.value = true
+  try {
+    const node = await graphApi.createNode({
+      name: newNodeForm.name.trim(),
+      subject: id.value,
+      description: newNodeForm.description.trim() || undefined,
+    })
+    await Promise.all([
+      graphStore.loadSquareStats(),
+      graphStore.loadSubjectGraph(id.value),
+      graphStore.searchNodes('', id.value),
+    ])
+    newNodeForm.name = ''
+    newNodeForm.description = ''
+    newNodeVisible.value = false
+    await selectNode(node)
+    ElMessage.success('知识点已新增')
+  } finally {
+    creatingNode.value = false
+  }
+}
+
+async function deleteSelectedNode(): Promise<void> {
+  const node = graphStore.currentGraph
+  if (!node) return
+
+  try {
+    await ElMessageBox.confirm(
+      `确定删除知识点“${node.name}”吗？相关关系、待审核修改和图谱任务也会被删除。`,
+      '删除知识点',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' },
+    )
+  } catch (action) {
+    if (action === 'cancel' || action === 'close') return
+    console.error('打开删除确认框失败:', action)
+    return
+  }
+
+  try {
+    await graphApi.deleteNode(node.id)
+    clearNodeSelection()
+    await Promise.all([
+      graphStore.loadSquareStats(),
+      graphStore.loadSubjectGraph(id.value),
+      graphStore.searchNodes('', id.value),
+    ])
+    ElMessage.success('知识点已删除')
+  } catch (error) {
+    console.error('删除知识点失败:', error)
+  }
 }
 
 function formatSize(bytes: number): string {
@@ -346,6 +460,10 @@ async function searchNodes(): Promise<void> {
 }
 
 async function selectNode(node: KnowledgeNode): Promise<void> {
+  if (selectedNodeId.value === node.id) {
+    clearNodeSelection()
+    return
+  }
   selectedNodeId.value = node.id
   await graphStore.loadNodeDetail(node.id)
   await graphStore.loadNeighbors(node.id, 1, 50)
@@ -356,6 +474,15 @@ async function selectNode(node: KnowledgeNode): Promise<void> {
   await graphStore.loadNodeTasks(node.id)
   // 加载该节点的误解标注
   await graphStore.loadMisconceptions(node.id)
+}
+
+function clearNodeSelection(): void {
+  editorVisible.value = false
+  selectedNodeId.value = null
+  graphStore.currentGraph = null
+  nodeResources.value = []
+  recommendations.value = []
+  selectedLink.value = null
 }
 
 async function handleGraphNodeClick(node: KnowledgeNode): Promise<void> {
@@ -540,9 +667,6 @@ onMounted(async () => {
     graphStore.searchNodes('', id.value),
     graphStore.loadSubjectGraph(id.value),
   ])
-  if (graphStore.searchResults.length > 0 && !selectedNodeId.value) {
-    await selectNode(graphStore.searchResults[0])
-  }
 })
 </script>
 

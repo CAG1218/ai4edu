@@ -214,9 +214,14 @@ export const graphApi = {
   },
 
   /** 创建知识节点 */
-  async createNode(data: { id: string; name: string; subject: string; description?: string }): Promise<KnowledgeNode> {
+  async createNode(data: { id?: string; name: string; subject: string; description?: string }): Promise<KnowledgeNode> {
     const response = await api.post('/graphs/nodes', null, { params: data })
     return response.data
+  },
+
+  /** 删除知识节点及其图谱关系 */
+  async deleteNode(nodeId: string): Promise<void> {
+    await api.delete(`/graphs/nodes/${nodeId}`)
   },
 
   /** 更新知识节点 */

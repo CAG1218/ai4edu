@@ -3,6 +3,7 @@ AI4Edu 知识图谱 API
 提供图谱广场、节点查询、邻居遍历、推荐、misconception管理、跨学科图谱、任务查询等端点
 """
 import json
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -29,7 +30,7 @@ router = APIRouter()
 # AntiMisconception Agent 实例（用于 AI 辅助标注）
 _anti_mc_agent = AntiMisconceptionAgent()
 
-EDITOR_ROLES = {"teacher", "admin", "super_admin"}
+EDITOR_ROLES = {"teacher", "super_admin"}
 
 
 async def _apply_graph_change(
@@ -208,17 +209,18 @@ async def get_cognitive_goals(
 
 @router.post("/nodes", summary="创建知识节点")
 async def create_node(
-    id: str = Query(..., description="节点ID"),
+    id: Optional[str] = Query(None, description="节点ID；留空时自动生成"),
     name: str = Query(..., description="节点名称"),
     subject: str = Query(..., description="学科分类"),
     description: Optional[str] = Query(None, description="节点描述"),
     cognitive_level: Optional[str] = Query(None, description="认知水平JSON"),
     has_misconception: bool = Query(False, description="是否有误解标注"),
     misconceptions: Optional[str] = Query(None, description="误解标注JSON"),
-    user: User = Depends(require_role(["teacher", "admin", "super_admin"])),
+    user: User = Depends(require_role(["teacher"])),
 ) -> APIResponse:
-    """创建新的知识节点（教师+权限）"""
-    node_data: dict = {"id": id, "name": name, "subject": subject}
+    """创建新的知识节点（教师或超级管理员）"""
+    node_id = id or f"{subject}_{uuid.uuid4().hex[:12]}"
+    node_data: dict = {"id": node_id, "name": name, "subject": subject, "node_type": "knowledge"}
     if description:
         node_data["description"] = description
     if cognitive_level:
@@ -239,7 +241,7 @@ async def update_node(
     cognitive_level: Optional[str] = Query(None, description="认知水平JSON"),
     has_misconception: Optional[bool] = Query(None, description="是否有误解标注"),
     misconceptions: Optional[str] = Query(None, description="误解标注JSON"),
-    user: User = Depends(require_role(["teacher", "admin", "super_admin"])),
+    user: User = Depends(require_role(["teacher"])),
 ) -> APIResponse:
     """更新知识节点属性（教师+权限）"""
     update_data: dict = {}
@@ -263,13 +265,25 @@ async def update_node(
     return APIResponse(data=node, message="节点更新成功")
 
 
+@router.delete("/nodes/{node_id}", summary="删除知识节点")
+async def delete_node(
+    node_id: str,
+    user: User = Depends(require_role(["teacher"])),
+) -> APIResponse:
+    """删除知识节点及其审核申请、图谱任务和所有关系。"""
+    deleted = await graph_service.delete_node(node_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="节点不存在")
+    return APIResponse(message="知识点已删除")
+
+
 @router.post("/nodes/{from_id}/link/{to_id}", summary="创建节点关系")
 async def create_relationship(
     from_id: str,
     to_id: str,
     rel_type: str = Query("RELATED", description="关系类型"),
     label: Optional[str] = Query(None, description="关系标签"),
-    user: User = Depends(require_role(["teacher", "admin", "super_admin"])),
+    user: User = Depends(require_role(["teacher"])),
 ) -> APIResponse:
     """创建两个知识节点之间的关系（教师+权限）"""
     result = await graph_service.create_relationship(from_id, to_id, rel_type, label)
@@ -283,7 +297,7 @@ async def delete_relationship(
     from_id: str,
     to_id: str,
     rel_type: str = Query("RELATED", description="关系类型"),
-    user: User = Depends(require_role(["teacher", "admin", "super_admin"])),
+    user: User = Depends(require_role(["teacher"])),
 ) -> APIResponse:
     """删除两个知识节点之间的关系（教师+权限）"""
     await graph_service.delete_relationship(from_id, to_id, rel_type)
@@ -359,7 +373,7 @@ async def list_graph_change_requests(
 async def review_graph_change(
     request_id: str,
     body: GraphReviewAction,
-    user: User = Depends(require_role(["teacher", "admin", "super_admin"])),
+    user: User = Depends(require_role(["teacher"])),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse:
     request = await graph_service.get_change_request(request_id)
@@ -490,7 +504,7 @@ async def get_node_tasks(
 async def create_node_task(
     node_id: str,
     body: GraphTaskCreate,
-    user: User = Depends(require_role(["teacher", "admin", "super_admin"])),
+    user: User = Depends(require_role(["teacher"])),
 ) -> APIResponse:
     task = await graph_service.create_graph_task(
         node_id=node_id,
