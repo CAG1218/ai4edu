@@ -40,18 +40,6 @@
           class="link-line"
           @click.stop="onLinkClick(link)"
         />
-        <text
-          v-for="(link, idx) in renderedLinks.filter((item) => item.type === 'HAS_KNOWLEDGE')"
-          :key="`hierarchy-label-${idx}`"
-          :x="getLinkMidpoint(link, 'x')"
-          :y="getLinkMidpoint(link, 'y') - 5"
-          text-anchor="middle"
-          font-size="11"
-          fill="#606266"
-          class="link-label"
-        >
-          包含
-        </text>
       </g>
 
       <g class="nodes">
@@ -96,13 +84,20 @@
           </text>
           <text
             v-if="node.node_type !== 'subject'"
-            :dy="getNodeRadius(node) + 14"
             text-anchor="middle"
-            fill="#333"
-            font-size="12"
+            fill="#fff"
+            font-size="11"
+            font-weight="600"
             class="node-label"
           >
-            {{ truncate(node.name || node.id, 8) }}
+            <tspan
+              v-for="(line, lineIndex) in getNodeLabelLines(node)"
+              :key="`${node.id}-label-${lineIndex}`"
+              x="0"
+              :dy="lineIndex === 0 ? (getNodeLabelLines(node).length === 1 ? 4 : -2) : 14"
+            >
+              {{ line }}
+            </tspan>
           </text>
         </g>
       </g>
@@ -258,7 +253,7 @@ function getNodeRadius(node: GraphNode): number {
   const linkCount = props.links.filter(
     (l) => (l.source === node.id || l.source === node) || (l.target === node.id || l.target === node)
   ).length
-  return Math.max(16, Math.min(32, 12 + linkCount * 2))
+  return Math.max(28, Math.min(40, 20 + linkCount * 2))
 }
 
 function getNodeColor(node: GraphNode): string {
@@ -328,12 +323,13 @@ function getLinkX(link: GraphLink, end: 'source' | 'target', axis: 'x' | 'y'): n
   return node?.[axis] || 0
 }
 
-function getLinkMidpoint(link: GraphLink, axis: 'x' | 'y'): number {
-  return (getLinkX(link, 'source', axis) + getLinkX(link, 'target', axis)) / 2
-}
+function getNodeLabelLines(node: GraphNode): string[] {
+  const label = node.name || node.id
+  if (label.length <= 4) return [label]
 
-function truncate(str: string, len: number): string {
-  return str.length > len ? str.slice(0, len) + '...' : str
+  const compactLabel = label.length > 8 ? `${label.slice(0, 7)}…` : label
+  const splitAt = Math.ceil(compactLabel.length / 2)
+  return [compactLabel.slice(0, splitAt), compactLabel.slice(splitAt)]
 }
 
 // ==================== 力导向布局（简化版） ====================
@@ -642,8 +638,7 @@ onUnmounted(() => {
     user-select: none;
   }
 
-  .node-type-label,
-  .link-label {
+  .node-type-label {
     pointer-events: none;
     user-select: none;
   }
