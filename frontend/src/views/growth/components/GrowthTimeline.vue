@@ -37,7 +37,16 @@
                 <component :is="getSourceIcon(item.source)" />
               </el-icon>
             </template>
-            <el-card shadow="hover" class="timeline-card">
+            <el-card
+              shadow="hover"
+              class="timeline-card"
+              role="button"
+              tabindex="0"
+              :aria-label="`查看${item.title}`"
+              @click="$emit('select', item)"
+              @keydown.enter.prevent="$emit('select', item)"
+              @keydown.space.prevent="$emit('select', item)"
+            >
               <div class="timeline-card__header">
                 <el-tag :type="getSourceTagType(item.source)" size="small" effect="light">
                   {{ getSourceLabel(item.source) }}
@@ -85,7 +94,7 @@ import {
 } from '@element-plus/icons-vue'
 import type { TimelineItem } from '@/services/growth'
 
-const props = defineProps<{
+defineProps<{
   items: TimelineItem[]
   loading: boolean
   hasMore: boolean
@@ -94,6 +103,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'load-more': []
   filter: [source: string]
+  select: [item: TimelineItem]
 }>()
 
 const currentSource = ref<string>('')
@@ -214,6 +224,17 @@ function handleFilter(value: string): void {
 }
 
 .timeline-card {
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+  &:hover,
+  &:focus-visible {
+    transform: translateX(3px);
+    box-shadow: 0 5px 16px rgba(64, 158, 255, 0.16);
+    outline: 2px solid rgba(64, 158, 255, 0.3);
+    outline-offset: 2px;
+  }
+
   :deep(.el-card__body) {
     padding: 12px 16px;
   }

@@ -11,7 +11,16 @@
             :sm="8"
             :md="6"
           >
-            <el-card shadow="hover" class="stat-card">
+            <el-card
+              shadow="hover"
+              class="stat-card"
+              role="button"
+              tabindex="0"
+              :aria-label="`查看${card.label}`"
+              @click="$emit('select', card.key)"
+              @keydown.enter.prevent="$emit('select', card.key)"
+              @keydown.space.prevent="$emit('select', card.key)"
+            >
               <div class="stat-card__inner">
                 <el-icon class="stat-card__icon" :size="28">
                   <component :is="getIconComponent(card.icon)" />
@@ -93,6 +102,10 @@ const props = defineProps<{
   loading: boolean
 }>()
 
+defineEmits<{
+  select: [key: string]
+}>()
+
 /** 图标名称到组件的映射 */
 const iconMap: Record<string, any> = {
   TrendCharts,
@@ -105,6 +118,14 @@ const iconMap: Record<string, any> = {
   School,
   Clock,
   Document,
+  chat: ChatDotRound,
+  clipboard: DataAnalysis,
+  note: EditPen,
+  card: Notebook,
+  star: Trophy,
+  book: Reading,
+  bookmark: Document,
+  users: School,
 }
 
 function getIconComponent(iconName: string | null): any {
@@ -170,6 +191,16 @@ const subjectChartOption = computed(() => {
 
   .stat-card {
     margin-bottom: 16px;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+
+    &:hover,
+    &:focus-visible {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 18px rgba(64, 158, 255, 0.18);
+      outline: 2px solid rgba(64, 158, 255, 0.35);
+      outline-offset: 2px;
+    }
 
     &__inner {
       display: flex;

@@ -14,7 +14,7 @@
       <el-col :xs="24" :lg="12">
         <KnowledgeGraphEntry :graph-mini="selfStudyMockData.graphMini" @enter="handleEnterGraph" />
       </el-col>
-      <el-col :xs="24" :lg="12">
+      <el-col id="flashcards" :xs="24" :lg="12">
         <FlashcardReview :stats="selfStudyMockData.flashcardStats" @start="handleStartReview" />
       </el-col>
     </el-row>

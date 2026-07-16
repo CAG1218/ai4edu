@@ -7,7 +7,7 @@
     <SceneStatCard :stats="classroomMockData.stats" />
 
     <!-- 当前课程高亮卡 -->
-    <CurrentCourseCard :course="currentCourse" @action="handleSubAction" />
+    <CurrentCourseCard id="courses" :course="currentCourse" @action="handleSubAction" />
 
     <!-- 今日课表 + 课后复习 -->
     <el-row :gutter="16">
@@ -21,6 +21,7 @@
 
     <!-- 课堂工具栏 -->
     <QuickActionBar
+      id="classroom-activity"
       :actions="classroomMockData.toolbarActions"
       title="课堂工具"
       @action="handleAction"

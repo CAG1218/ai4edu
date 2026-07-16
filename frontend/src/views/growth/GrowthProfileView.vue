@@ -36,7 +36,11 @@
         <el-icon><DataAnalysis /></el-icon>
         成长概览
       </h3>
-      <GrowthDashboard :data="growthStore.dashboard" :loading="dashboardLoading" />
+      <GrowthDashboard
+        :data="growthStore.dashboard"
+        :loading="dashboardLoading"
+        @select="handleDashboardSelect"
+      />
     </section>
 
     <!-- 时间线 -->
@@ -52,12 +56,13 @@
           :has-more="growthStore.timelineHasMore"
           @load-more="handleLoadMore"
           @filter="handleFilter"
+          @select="handleTimelineSelect"
         />
       </el-card>
     </section>
 
     <!-- 教师评价 -->
-    <section class="growth-section">
+    <section id="teacher-evaluations" ref="evaluationSectionRef" class="growth-section">
       <div class="growth-section__header">
         <h3 class="growth-section__title">
           <el-icon><TrendCharts /></el-icon>
@@ -96,8 +101,8 @@
  * 学生成长档案主页面
  * 支持学生端和教师端两种视角
  */
-import { computed, ref, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, ref, onMounted, nextTick } from 'vue'
+import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   School,
@@ -113,9 +118,10 @@ import GrowthDashboard from './components/GrowthDashboard.vue'
 import GrowthTimeline from './components/GrowthTimeline.vue'
 import TeacherEvaluationCard from './components/TeacherEvaluationCard.vue'
 import EvaluationForm from './components/EvaluationForm.vue'
-import type { EvaluationItem } from '@/services/growth'
+import type { EvaluationItem, TimelineItem } from '@/services/growth'
 
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const growthStore = useGrowthStore()
 
@@ -152,6 +158,14 @@ const studentInfo = computed(() => {
 // ============ 加载状态 ============
 
 const dashboardLoading = ref(false)
+const evaluationSectionRef = ref<HTMLElement | null>(null)
+
+const activeSceneType = computed(() => {
+  const sceneType = String(route.params.sceneType || '')
+  return ['classroom', 'self_study', 'exam', 'discussion'].includes(sceneType)
+    ? sceneType
+    : 'classroom'
+})
 
 // ============ 评价表单 ============
 
@@ -185,6 +199,90 @@ function handleLoadMore(): void {
 
 function handleFilter(source: string): void {
   growthStore.fetchTimeline(studentId.value, source)
+}
+
+async function scrollToEvaluations(): Promise<void> {
+  await nextTick()
+  evaluationSectionRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+async function handleDashboardSelect(key: string): Promise<void> {
+  const destinations: Record<string, RouteLocationRaw> = {
+    ai_chat: { name: 'AgentCenter', params: { sceneType: activeSceneType.value } },
+    diagnosis: { name: 'SceneDiagnosis', params: { sceneType: activeSceneType.value } },
+    note: { name: 'NoteList', params: { sceneType: activeSceneType.value } },
+    flashcard: { path: '/scene/self_study/dashboard', hash: '#flashcards' },
+    course: { path: '/scene/classroom/dashboard', hash: '#courses' },
+    resource: { name: 'MyResources', params: { sceneType: activeSceneType.value } },
+    classroom: { path: '/scene/classroom/dashboard', hash: '#classroom-activity' },
+  }
+
+  if (key === 'evaluation') {
+    await scrollToEvaluations()
+    return
+  }
+
+  const destination = destinations[key]
+  if (destination) {
+    await router.push(destination)
+  }
+}
+
+async function handleTimelineSelect(item: TimelineItem): Promise<void> {
+  const metadata = item.metadata || {}
+
+  switch (item.source) {
+    case 'agent':
+      await router.push({
+        name: 'SceneAIChat',
+        params: {
+          sceneType: activeSceneType.value,
+          ...(metadata.session_id ? { sessionId: metadata.session_id } : {}),
+        },
+      })
+      break
+    case 'diagnosis':
+      await router.push({
+        name: 'SceneDiagnosis',
+        params: {
+          sceneType: activeSceneType.value,
+          ...(metadata.diagnosis_id ? { id: metadata.diagnosis_id } : {}),
+        },
+      })
+      break
+    case 'note':
+      if (metadata.note_id) {
+        await router.push({
+          name: 'SceneNote',
+          params: { sceneType: activeSceneType.value, id: metadata.note_id },
+        })
+      } else {
+        await router.push({ name: 'NoteList', params: { sceneType: activeSceneType.value } })
+      }
+      break
+    case 'flashcard':
+      await router.push({ path: '/scene/self_study/dashboard', hash: '#flashcards' })
+      break
+    case 'evaluation':
+      await scrollToEvaluations()
+      break
+    case 'course':
+      await router.push({ path: '/scene/classroom/dashboard', hash: '#courses' })
+      break
+    case 'resource':
+      if (metadata.resource_id) {
+        await router.push({
+          name: 'ResourceDetail',
+          params: { sceneType: activeSceneType.value, id: metadata.resource_id },
+        })
+      } else {
+        await router.push({ name: 'MyResources', params: { sceneType: activeSceneType.value } })
+      }
+      break
+    case 'classroom':
+      await router.push({ path: '/scene/classroom/dashboard', hash: '#classroom-activity' })
+      break
+  }
 }
 
 // ============ 工具函数 ============

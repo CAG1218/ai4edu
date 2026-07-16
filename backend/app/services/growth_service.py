@@ -321,6 +321,7 @@ class GrowthService:
                 title=c.knowledge_point or (c.front[:30] if c.front else "复习卡片"),
                 description=f"复习{c.repetition_count}次",
                 timestamp=c.created_at,
+                metadata={"flashcard_id": c.id},
             )
             for c in cards
         ]
@@ -348,7 +349,7 @@ class GrowthService:
                 title=f"教师评价·{e.evaluation_type}",
                 description=e.content[:100] if e.content else None,
                 timestamp=e.created_at,
-                metadata={"rating": e.rating},
+                metadata={"evaluation_id": e.id, "rating": e.rating},
             )
             for e in evals
         ]
@@ -377,6 +378,7 @@ class GrowthService:
                 title=course_name,
                 description=f"进度{enrollment.progress}%",
                 timestamp=enrollment.enrolled_at,
+                metadata={"course_id": enrollment.course_id},
             )
             for enrollment, course_name in rows
         ]
@@ -399,6 +401,7 @@ class GrowthService:
                 event_type="resource_favorited",
                 title=resource_title,
                 timestamp=favorite.created_at,
+                metadata={"resource_id": favorite.resource_id},
             )
             for favorite, resource_title in rows
         ]
@@ -421,6 +424,7 @@ class GrowthService:
                 event_type="classroom_joined",
                 title=classroom_title,
                 timestamp=participant.joined_at,
+                metadata={"classroom_id": participant.classroom_id},
             )
             for participant, classroom_title in rows
         ]
