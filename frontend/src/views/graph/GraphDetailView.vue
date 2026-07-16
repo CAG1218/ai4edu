@@ -4,7 +4,10 @@
       <el-button text @click="goBack">
         <el-icon><ArrowLeft /></el-icon> 返回广场
       </el-button>
-      <h2>{{ currentSubject?.name || id }}</h2>
+      <div class="graph-detail__title-group">
+        <h2>{{ courseName ? `${courseName} · ${currentSubject?.name || id}` : (currentSubject?.name || id) }}</h2>
+        <el-tag v-if="courseName" size="small" type="success" effect="plain">课程图谱</el-tag>
+      </div>
       <div class="graph-detail__header-actions">
         <span v-if="graphStore.currentGraph" class="graph-detail__selected-node">
           当前知识点：{{ graphStore.currentGraph.name }}
@@ -310,6 +313,7 @@ const graphStore = useGraphStore()
 const authStore = useAuthStore()
 
 const id = computed(() => route.params.id as string)
+const courseName = computed(() => String(route.query.course_name || ''))
 const activeTab = ref('overview')
 const nodeQuery = ref('')
 const selectedNodeId = ref<string | null>(null)
@@ -682,6 +686,16 @@ onMounted(async () => {
       font-size: 20px;
       font-weight: 700;
       color: var(--color-text-primary);
+    }
+  }
+
+  &__title-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    h2 {
+      margin: 0;
     }
   }
 

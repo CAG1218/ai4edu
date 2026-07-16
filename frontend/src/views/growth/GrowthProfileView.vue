@@ -212,7 +212,11 @@ async function handleDashboardSelect(key: string): Promise<void> {
     diagnosis: { name: 'SceneDiagnosis', params: { sceneType: activeSceneType.value } },
     note: { name: 'NoteList', params: { sceneType: activeSceneType.value } },
     flashcard: { path: '/scene/self_study/dashboard', hash: '#flashcards' },
-    course: { path: '/scene/classroom/dashboard', hash: '#courses' },
+    course: {
+      path: '/scene/classroom/dashboard',
+      query: { course_tab: 'enrolled' },
+      hash: '#courses',
+    },
     resource: { name: 'MyResources', params: { sceneType: activeSceneType.value } },
     classroom: { path: '/scene/classroom/dashboard', hash: '#classroom-activity' },
   }
@@ -267,7 +271,11 @@ async function handleTimelineSelect(item: TimelineItem): Promise<void> {
       await scrollToEvaluations()
       break
     case 'course':
-      await router.push({ path: '/scene/classroom/dashboard', hash: '#courses' })
+      await router.push({
+        path: '/scene/classroom/dashboard',
+        query: { course_tab: 'enrolled' },
+        hash: '#courses',
+      })
       break
     case 'resource':
       if (metadata.resource_id) {

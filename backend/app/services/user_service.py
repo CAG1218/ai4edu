@@ -8,10 +8,12 @@ from typing import Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import aliased
 
 from app.core.exceptions import NotFoundException, ValidationException
 from app.core.security import hash_password, verify_password
 from app.models.user import User
+from app.models.course import Course, CourseEnrollment
 from app.schemas.user import UserResponse, UserUpdate, OnboardingRequest
 
 
@@ -42,6 +44,59 @@ class UserService:
             raise NotFoundException(message="用户不存在")
 
         return self._to_response(user)
+
+    async def list_enrolled_courses(self, user_id: int) -> list[dict]:
+        """返回用户当前有效选课，并解析课程展示配置。"""
+        teacher = aliased(User)
+        result = await self.db.execute(
+            select(CourseEnrollment, Course, teacher.nickname, teacher.email)
+            .join(Course, Course.id == CourseEnrollment.course_id)
+            .join(teacher, teacher.id == Course.teacher_id)
+            .where(
+                CourseEnrollment.user_id == user_id,
+                CourseEnrollment.dropped_at.is_(None),
+                Course.is_active.is_(True),
+            )
+            .order_by(Course.name, Course.id)
+        )
+
+        courses: list[dict] = []
+        for enrollment, course, teacher_nickname, teacher_email in result.all():
+            settings: dict = {}
+            if course.settings:
+                try:
+                    parsed = json.loads(course.settings)
+                    if isinstance(parsed, dict):
+                        settings = parsed
+                except (json.JSONDecodeError, TypeError):
+                    settings = {}
+
+            weekday = settings.get("weekday") or settings.get("day_of_week")
+            start_time = settings.get("start_time")
+            end_time = settings.get("end_time")
+            configured_time = settings.get("class_time") or settings.get("schedule")
+            time_parts = [str(part) for part in (weekday, configured_time) if part]
+            if start_time or end_time:
+                time_parts.append(f"{start_time or '--:--'} - {end_time or '--:--'}")
+
+            weeks = settings.get("weeks") or settings.get("week_range")
+            if isinstance(weeks, list):
+                weeks = "、".join(str(week) for week in weeks)
+
+            courses.append({
+                "id": course.id,
+                "name": course.name,
+                "subject": course.subject,
+                "graph_subject_id": course.subject,
+                "location": settings.get("location") or settings.get("classroom"),
+                "class_time": " ".join(time_parts) or None,
+                "teacher_name": teacher_nickname or teacher_email,
+                "class_weeks": str(weeks) if weeks else None,
+                "semester": course.semester,
+                "progress": float(enrollment.progress or 0),
+            })
+
+        return courses
 
     async def list_users(
         self,

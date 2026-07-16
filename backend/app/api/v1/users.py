@@ -16,6 +16,7 @@ from app.schemas.user import (
     OnboardingResponse,
     ChangePasswordRequest,
     UpdatePreferencesRequest,
+    EnrolledCourseResponse,
 )
 from app.schemas.common import APIResponse, PaginationParams
 from app.database import get_db
@@ -24,6 +25,17 @@ from app.dependencies import get_current_user, require_role
 from app.models.user import User
 
 router = APIRouter()
+
+
+@router.get("/me/courses", response_model=APIResponse[list[EnrolledCourseResponse]], summary="获取我的选课列表")
+async def list_my_enrolled_courses(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> APIResponse[list[EnrolledCourseResponse]]:
+    """获取当前用户所有未退选且仍启用的课程。"""
+    user_service = UserService(db)
+    courses = await user_service.list_enrolled_courses(current_user.id)
+    return APIResponse(data=[EnrolledCourseResponse(**course) for course in courses])
 
 
 @router.get("/", response_model=APIResponse[UserListResponse], summary="获取用户列表")

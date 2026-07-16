@@ -3,22 +3,6 @@
     <!-- 场景横幅 -->
     <SceneWelcomeBanner :config="sceneConfig" />
 
-    <!-- 课堂专属统计卡 -->
-    <SceneStatCard :stats="classroomMockData.stats" />
-
-    <!-- 当前课程高亮卡 -->
-    <CurrentCourseCard id="courses" :course="currentCourse" @action="handleSubAction" />
-
-    <!-- 今日课表 + 课后复习 -->
-    <el-row :gutter="16">
-      <el-col :xs="24" :lg="14">
-        <TodaySchedule :courses="todayCoursesWithStatus" />
-      </el-col>
-      <el-col :xs="24" :lg="10">
-        <ReviewReminder :reminders="classroomMockData.reviewReminders" @action="handleReminderAction" />
-      </el-col>
-    </el-row>
-
     <!-- 课堂工具栏 -->
     <QuickActionBar
       id="classroom-activity"
@@ -26,6 +10,32 @@
       title="课堂工具"
       @action="handleAction"
     />
+
+    <!-- 课堂专属统计卡 -->
+    <SceneStatCard :stats="classroomMockData.stats" />
+
+    <!-- 当前课程高亮卡 -->
+    <CurrentCourseCard :course="currentCourse" @action="handleSubAction" />
+
+    <!-- 今日课表 + 课后复习 -->
+    <el-row :gutter="16">
+      <el-col :xs="24" :lg="14">
+        <div id="courses" class="classroom-course-panel card">
+          <el-tabs v-model="activeCourseTab">
+            <el-tab-pane label="今日课表" name="today">
+              <TodaySchedule :courses="todayCoursesWithStatus" embedded />
+            </el-tab-pane>
+            <el-tab-pane label="选课列表" name="enrolled" lazy>
+              <EnrolledCourseList />
+            </el-tab-pane>
+          </el-tabs>
+        </div>
+      </el-col>
+      <el-col :xs="24" :lg="10">
+        <ReviewReminder :reminders="classroomMockData.reviewReminders" @action="handleReminderAction" />
+      </el-col>
+    </el-row>
+
   </div>
 </template>
 
@@ -35,8 +45,8 @@
  * 组合：场景横幅 + 统计卡 + 当前课程卡 + 今日课表 + 课后复习 + 工具栏
  * 使用 dayjs 判断课程状态（进行中/已结束/未开始）
  */
-import { computed, inject, type Ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, inject, ref, watch, type Ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useSceneStore } from '@/stores/scene'
 import { SCENE_CONFIG } from '@/utils/constants'
 import dayjs from 'dayjs'
@@ -45,13 +55,25 @@ import SceneStatCard from '../components/SceneStatCard.vue'
 import QuickActionBar from '../components/QuickActionBar.vue'
 import CurrentCourseCard from './components/CurrentCourseCard.vue'
 import TodaySchedule from './components/TodaySchedule.vue'
+import EnrolledCourseList from './components/EnrolledCourseList.vue'
 import ReviewReminder from './components/ReviewReminder.vue'
 import { classroomMockData } from '../mock/scene-mock-data'
 import { CourseStatus } from '../types'
 import type { CourseScheduleItem, QuickAction, ReviewReminderItem } from '../types'
 
 const router = useRouter()
+const route = useRoute()
 const sceneStore = useSceneStore()
+const activeCourseTab = ref<'today' | 'enrolled'>(
+  route.query.course_tab === 'enrolled' ? 'enrolled' : 'today'
+)
+
+watch(
+  () => route.query.course_tab,
+  (tab) => {
+    if (tab === 'enrolled') activeCourseTab.value = 'enrolled'
+  }
+)
 
 /** 场景配置（从 SCENE_CONFIG 获取） */
 const sceneConfig = computed(() => SCENE_CONFIG[sceneStore.currentSceneType])
@@ -125,5 +147,14 @@ function handleReminderAction(item: ReviewReminderItem): void {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-lg, 16px);
+}
+
+.classroom-course-panel {
+  min-height: 280px;
+  padding: 16px;
+
+  :deep(.el-tabs__header) {
+    margin-bottom: 14px;
+  }
 }
 </style>

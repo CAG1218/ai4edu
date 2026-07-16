@@ -91,6 +91,9 @@ ROLE_PERMISSIONS: Dict[str, Dict[str, Set[str]]] = {
         "GET": {"student", "teacher", "admin", "super_admin"},
         "POST": {"student", "teacher", "admin", "super_admin"},
     },
+    "/api/v1/users/me/courses": {
+        "GET": {"student", "teacher", "admin", "super_admin"},
+    },
     "/api/v1/users": {
         "GET": {"admin", "super_admin"},
         "POST": {"admin", "super_admin"},

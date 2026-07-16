@@ -63,6 +63,21 @@ class UserListResponse(BaseModel):
     page_size: int = Field(default=20, description="每页数量")
 
 
+class EnrolledCourseResponse(BaseModel):
+    """当前用户已选课程。"""
+
+    id: int = Field(..., description="课程ID")
+    name: str = Field(..., description="课程名称")
+    subject: str = Field(..., description="关联学科标识")
+    graph_subject_id: str = Field(..., description="知识图谱详情页使用的学科标识")
+    location: Optional[str] = Field(default=None, description="上课地点")
+    class_time: Optional[str] = Field(default=None, description="上课时间")
+    teacher_name: str = Field(..., description="任课教师")
+    class_weeks: Optional[str] = Field(default=None, description="上课周次")
+    semester: str = Field(..., description="学期")
+    progress: float = Field(default=0, description="学习进度")
+
+
 class OnboardingRequest(BaseModel):
     """Onboarding 引导请求"""
 

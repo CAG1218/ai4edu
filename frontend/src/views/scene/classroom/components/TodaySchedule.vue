@@ -1,6 +1,6 @@
 <template>
-  <div class="today-schedule card">
-    <h3 class="today-schedule__title">今日课表</h3>
+  <div :class="['today-schedule', { card: !embedded }]">
+    <h3 v-if="!embedded" class="today-schedule__title">今日课表</h3>
     <div v-if="courses.length === 0" class="today-schedule__empty">
       <el-empty description="今日暂无课程" :image-size="60" />
     </div>
@@ -46,9 +46,13 @@ import type { CourseScheduleItem } from '../../types'
 interface Props {
   /** 今日课程列表 */
   courses: CourseScheduleItem[]
+  /** 嵌入课程面板时由外层提供标题和卡片样式 */
+  embedded?: boolean
 }
 
-defineProps<Props>()
+withDefaults(defineProps<Props>(), {
+  embedded: false,
+})
 
 /** 状态对应标签文字 */
 function statusLabel(status: CourseStatus): string {
