@@ -16,24 +16,6 @@
       </div>
     </div>
 
-    <el-card shadow="never" class="graph-detail__structure-card">
-      <div class="graph-detail__structure-header">
-        <div>
-          <h3>学科知识结构图</h3>
-          <p>中心节点代表学科，周围节点代表该学科包含的知识点。</p>
-        </div>
-        <el-tag type="info" effect="plain">学科 → 包含知识点</el-tag>
-      </div>
-      <ForceGraph
-        :nodes="graphStore.subjectGraph.nodes"
-        :links="graphStore.subjectGraph.links"
-        height="460px"
-        @node-click="handleGraphNodeClick"
-        @node-hover="handleNodeHover"
-        @link-click="handleLinkClick"
-      />
-    </el-card>
-
     <el-tabs v-model="activeTab" type="border-card">
       <!-- Tab1: 概览 -->
       <el-tab-pane label="概览" name="overview">
@@ -103,7 +85,7 @@
           </el-button>
         </div>
         <el-alert
-          title="学科与知识点的关系图显示在页面上方；点击知识点可切换当前编辑对象。"
+          title="学科与知识点的关系图显示在页面下方；点击知识点可切换当前编辑对象。"
           type="info"
           :closable="false"
           show-icon
@@ -209,6 +191,24 @@
         <el-empty v-else description="请先选择一个知识点" />
       </el-tab-pane>
     </el-tabs>
+
+    <el-card shadow="never" class="graph-detail__structure-card graph-detail__structure-card--bottom">
+      <div class="graph-detail__structure-header">
+        <div>
+          <h3>学科知识结构图</h3>
+          <p>中心节点代表学科，周围节点代表该学科包含的知识点。</p>
+        </div>
+        <el-tag type="info" effect="plain">学科 → 包含知识点</el-tag>
+      </div>
+      <ForceGraph
+        :nodes="graphStore.subjectGraph.nodes"
+        :links="graphStore.subjectGraph.links"
+        height="460px"
+        @node-click="handleGraphNodeClick"
+        @node-hover="handleNodeHover"
+        @link-click="handleLinkClick"
+      />
+    </el-card>
 
     <!-- Misconception 详情弹窗 -->
     <MisconceptionDialog
@@ -578,6 +578,11 @@ onMounted(async () => {
 
     :deep(.el-card__body) {
       padding: 20px;
+    }
+
+    &--bottom {
+      margin-top: var(--spacing-lg);
+      margin-bottom: 0;
     }
   }
 
