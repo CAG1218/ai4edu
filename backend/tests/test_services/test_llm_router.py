@@ -178,10 +178,11 @@ class TestGetModel:
         for p in router._providers.values():
             p.api_key = "sk-real-key"
 
-        # preview 场景偏好 qwen
-        model = await router.get_model(scene_type="preview")
-        assert model is not None
-        assert model.provider == "qwen"
+        # AI 智能体中心的四类教学场景统一使用 DeepSeek
+        for scene_type in ("self_study", "preview", "review", "exam_prep"):
+            model = await router.get_model(scene_type=scene_type)
+            assert model is not None
+            assert model.provider == "deepseek"
 
         # self_study 场景偏好 deepseek
         model = await router.get_model(scene_type="self_study")

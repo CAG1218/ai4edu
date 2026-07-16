@@ -538,6 +538,10 @@ class LLMRouter:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if provider.provider == "deepseek":
+            payload["thinking"] = {
+                "type": "enabled" if settings.DEEPSEEK_THINKING_ENABLED else "disabled"
+            }
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(url, headers=headers, json=payload)
@@ -590,6 +594,10 @@ class LLMRouter:
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if provider.provider == "deepseek":
+            payload["thinking"] = {
+                "type": "enabled" if settings.DEEPSEEK_THINKING_ENABLED else "disabled"
+            }
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             async with client.stream("POST", url, headers=headers, json=payload) as response:

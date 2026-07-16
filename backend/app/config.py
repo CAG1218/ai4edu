@@ -115,8 +115,9 @@ class Settings(BaseSettings):
 
     # DeepSeek
     DEEPSEEK_API_KEY: str = ""
-    DEEPSEEK_API_BASE: str = "https://api.deepseek.com/v1"
-    DEEPSEEK_MODEL: str = "deepseek-chat"
+    DEEPSEEK_API_BASE: str = "https://api.deepseek.com"
+    DEEPSEEK_MODEL: str = "deepseek-v4-flash"
+    DEEPSEEK_THINKING_ENABLED: bool = False
 
     # 腾讯混元（OpenAI 兼容模式）
     HUNYUAN_API_KEY: str = ""

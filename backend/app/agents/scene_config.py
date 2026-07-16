@@ -53,7 +53,7 @@ SCENE_PRESETS: Dict[str, ScenePreset] = {
             "3. 提供3个引导性问题帮助学生思考\n"
             "4. 结合知识图谱展示知识点之间的关系"
         ),
-        preferred_model="qwen",
+        preferred_model="deepseek",
         default_agent_type="rag",
     ),
     "review": ScenePreset(
