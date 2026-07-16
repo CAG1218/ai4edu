@@ -68,6 +68,7 @@ class GraphService:
     def __init__(self):
         """初始化 Neo4j 驱动"""
         self._driver: Optional[AsyncDriver] = None
+        self._subject_hierarchy_ready = False
 
     async def _get_driver(self) -> AsyncDriver:
         """获取 Neo4j 异步驱动（懒加载单例）"""
@@ -94,15 +95,76 @@ class GraphService:
 
     # ==================== 图谱广场 ====================
 
+    async def ensure_subject_hierarchy(self) -> None:
+        """Ensure subjects and knowledge points are connected by graph edges."""
+        if self._subject_hierarchy_ready:
+            return
+
+        await self._run(
+            "UNWIND $subjects AS subject "
+            "MERGE (s:Subject {id: 'subject_' + subject.id}) "
+            "SET s.subject_id = subject.id, s.name = subject.name, "
+            "s.icon = subject.icon, s.color = subject.color, s.node_type = 'subject' "
+            "WITH s, subject "
+            "OPTIONAL MATCH (n:KnowledgeNode {subject: subject.id}) "
+            "FOREACH (_ IN CASE WHEN n IS NULL THEN [] ELSE [1] END | "
+            "  MERGE (s)-[:HAS_KNOWLEDGE]->(n))",
+            {"subjects": SUBJECT_CATEGORIES},
+        )
+        self._subject_hierarchy_ready = True
+
+    async def get_subject_graph(self, subject_id: str) -> Dict[str, Any]:
+        """Return a subject node, its knowledge points, and their relationships."""
+        await self.ensure_subject_hierarchy()
+        records = await self._run(
+            "MATCH (s:Subject {subject_id: $subject_id}) "
+            "OPTIONAL MATCH (s)-[:HAS_KNOWLEDGE]->(n:KnowledgeNode) "
+            "WITH s, [node IN collect(DISTINCT n) WHERE node IS NOT NULL] AS knowledge_nodes "
+            "OPTIONAL MATCH (a:KnowledgeNode)-[r:RELATED|PREREQUISITE|APPLICATION|RECOMMENDS]->"
+            "(b:KnowledgeNode) "
+            "WHERE a IN knowledge_nodes AND b IN knowledge_nodes "
+            "RETURN s, knowledge_nodes, "
+            "collect(DISTINCT {source: a.id, target: b.id, type: type(r), "
+            "label: coalesce(r.label, type(r))}) AS knowledge_links",
+            {"subject_id": subject_id},
+        )
+        if not records:
+            return {"nodes": [], "links": []}
+
+        subject = dict(records[0]["s"])
+        knowledge_nodes = [
+            {**dict(node), "node_type": "knowledge"}
+            for node in records[0]["knowledge_nodes"]
+        ]
+        hierarchy_links = [
+            {
+                "source": subject["id"],
+                "target": node["id"],
+                "type": "HAS_KNOWLEDGE",
+                "label": "包含知识点",
+            }
+            for node in knowledge_nodes
+        ]
+        knowledge_links = [
+            link for link in records[0]["knowledge_links"]
+            if link.get("source") and link.get("target")
+        ]
+        return {
+            "nodes": [subject, *knowledge_nodes],
+            "links": [*hierarchy_links, *knowledge_links],
+        }
+
     async def get_square_stats(self, tenant_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         获取学科广场统计：每个学科的节点数、完整度和 misconception 计数
         """
+        await self.ensure_subject_hierarchy()
         stats = []
         for subject in SUBJECT_CATEGORIES:
             # 统计该学科下的节点数
             count_result = await self._run(
-                "MATCH (n:KnowledgeNode {subject: $subject}) RETURN count(n) AS cnt",
+                "MATCH (:Subject {subject_id: $subject})-[:HAS_KNOWLEDGE]->(n:KnowledgeNode) "
+                "RETURN count(n) AS cnt",
                 {"subject": subject["id"]},
             )
             node_count = count_result[0]["cnt"] if count_result else 0
@@ -411,8 +473,31 @@ class GraphService:
         创建知识节点
         """
         props = ", ".join(f"{k}: ${k}" for k in node_data.keys())
-        cypher = f"CREATE (n:KnowledgeNode {{{props}}}) RETURN n"
-        result = await self._run(cypher, node_data)
+        subject = next(
+            (item for item in SUBJECT_CATEGORIES if item["id"] == node_data.get("subject")),
+            {
+                "id": str(node_data.get("subject", "unknown")),
+                "name": str(node_data.get("subject", "unknown")),
+                "icon": "Reading",
+                "color": "#5B8FF9",
+            },
+        )
+        cypher = (
+            f"CREATE (n:KnowledgeNode {{{props}}}) "
+            "WITH n MERGE (s:Subject {id: $subject_node_id}) "
+            "SET s.subject_id = $subject_id, s.name = $subject_name, "
+            "s.icon = $subject_icon, s.color = $subject_color, s.node_type = 'subject' "
+            "MERGE (s)-[:HAS_KNOWLEDGE]->(n) RETURN n"
+        )
+        params = {
+            **node_data,
+            "subject_node_id": f"subject_{subject['id']}",
+            "subject_id": subject["id"],
+            "subject_name": subject["name"],
+            "subject_icon": subject["icon"],
+            "subject_color": subject["color"],
+        }
+        result = await self._run(cypher, params)
         return result[0]["n"] if result else {}
 
     async def update_node(self, node_id: str, update_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -679,7 +764,14 @@ class GraphService:
         获取跨学科知识点关联网络
         返回节点、关系（含强度）和统计数据
         """
-        # 1. 获取选定学科的所有节点
+        await self.ensure_subject_hierarchy()
+
+        # 1. 获取选定的学科节点和知识点节点
+        subject_records = await self._run(
+            "MATCH (s:Subject) WHERE s.subject_id IN $subjects "
+            "RETURN s ORDER BY s.subject_id",
+            {"subjects": subjects},
+        )
         node_records = await self._run(
             "MATCH (n:KnowledgeNode) WHERE n.subject IN $subjects "
             "RETURN n.id AS id, n.name AS name, n.subject AS subject, "
@@ -687,23 +779,54 @@ class GraphService:
             {"subjects": subjects},
         )
 
-        # 限制最大节点数
-        if len(node_records) > max_nodes:
-            node_records = node_records[:max_nodes]
+        # 最大节点数包含学科节点，优先保留每个学科的中心节点
+        knowledge_limit = max(0, max_nodes - len(subject_records))
+        if len(node_records) > knowledge_limit:
+            node_records = node_records[:knowledge_limit]
 
         node_ids = {r["id"] for r in node_records}
         nodes: List[Dict[str, Any]] = []
 
-        # 构建节点列表
+        for record in subject_records:
+            subject_node = dict(record["s"])
+            nodes.append({
+                **subject_node,
+                "subject": subject_node["subject_id"],
+                "node_type": "subject",
+                "description": "学科中心节点",
+                "has_misconception": False,
+                "degree": 0,
+            })
+
         for r in node_records:
             nodes.append({
                 "id": r["id"],
                 "name": r.get("name", r["id"]),
                 "subject": r.get("subject", ""),
+                "node_type": "knowledge",
                 "description": r.get("description"),
                 "has_misconception": bool(r.get("has_misconception", False)),
                 "degree": 0,
             })
+
+        # 学科中心节点到知识点的结构关系始终展示，不受强度阈值影响
+        hierarchy_links: List[Dict[str, Any]] = []
+        for subject_record in subject_records:
+            subject_node = dict(subject_record["s"])
+            child_ids = [r["id"] for r in node_records if r.get("subject") == subject_node["subject_id"]]
+            for child_id in child_ids:
+                hierarchy_links.append({
+                    "source": subject_node["id"],
+                    "target": child_id,
+                    "type": "HAS_KNOWLEDGE",
+                    "label": "包含知识点",
+                    "is_cross": False,
+                    "strength": 1.0,
+                    "strength_label": "强",
+                })
+            for node in nodes:
+                if node["id"] == subject_node["id"]:
+                    node["degree"] = len(child_ids)
 
         # 2. 获取选定学科内 + 跨学科的关系
         rel_records = await self._run(
@@ -782,7 +905,7 @@ class GraphService:
             max_common_resources = max(max_common_resources, common_res)
 
         # 归一化并计算最终强度
-        links: List[Dict[str, Any]] = []
+        links: List[Dict[str, Any]] = list(hierarchy_links)
         for ls in link_strengths:
             cn_norm = ls["common_neighbors"] / max_common_neighbors if max_common_neighbors > 0 else 0.0
             cr_norm = ls["common_resources"] / max_common_resources if max_common_resources > 0 else 0.0
@@ -812,6 +935,8 @@ class GraphService:
         cross_links = [l for l in links if l["is_cross"]]
         subject_distribution: Dict[str, int] = {}
         for node in nodes:
+            if node.get("node_type") == "subject":
+                continue
             subj = node["subject"]
             subject_distribution[subj] = subject_distribution.get(subj, 0) + 1
 

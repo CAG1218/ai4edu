@@ -26,6 +26,8 @@ export const useGraphStore = defineStore('graph', () => {
   const currentGraph = ref<KnowledgeNode | null>(null)
   /** 邻居节点数据 */
   const neighborNodes = ref<NeighborData>({ nodes: [], links: [] })
+  /** 学科节点与其全部知识点构成的层级图 */
+  const subjectGraph = ref<NeighborData>({ nodes: [], links: [] })
   /** 认知目标数据 */
   const cognitiveGoal = ref<CognitiveGoal | null>(null)
   /** 搜索结果 */
@@ -80,6 +82,19 @@ export const useGraphStore = defineStore('graph', () => {
       neighborNodes.value = await graphApi.getNeighbors(nodeId, depth, limit)
     } catch (error) {
       console.error('加载邻居节点失败:', error)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /** 加载学科与知识点的直接关联图 */
+  async function loadSubjectGraph(subjectId: string): Promise<void> {
+    loading.value = true
+    try {
+      subjectGraph.value = await graphApi.getSubjectGraph(subjectId)
+    } catch (error) {
+      console.error('加载学科层级图失败:', error)
+      subjectGraph.value = { nodes: [], links: [] }
     } finally {
       loading.value = false
     }
@@ -205,6 +220,7 @@ export const useGraphStore = defineStore('graph', () => {
     squareStats,
     currentGraph,
     neighborNodes,
+    subjectGraph,
     cognitiveGoal,
     searchResults,
     loading,
@@ -216,6 +232,7 @@ export const useGraphStore = defineStore('graph', () => {
     loadSquareStats,
     loadNodeDetail,
     loadNeighbors,
+    loadSubjectGraph,
     searchNodes,
     loadCognitiveGoal,
     loadMisconceptions,

@@ -16,6 +16,24 @@
       </div>
     </div>
 
+    <el-card shadow="never" class="graph-detail__structure-card">
+      <div class="graph-detail__structure-header">
+        <div>
+          <h3>学科知识结构图</h3>
+          <p>中心节点代表学科，周围节点代表该学科包含的知识点。</p>
+        </div>
+        <el-tag type="info" effect="plain">学科 → 包含知识点</el-tag>
+      </div>
+      <ForceGraph
+        :nodes="graphStore.subjectGraph.nodes"
+        :links="graphStore.subjectGraph.links"
+        height="460px"
+        @node-click="handleGraphNodeClick"
+        @node-hover="handleNodeHover"
+        @link-click="handleLinkClick"
+      />
+    </el-card>
+
     <el-tabs v-model="activeTab" type="border-card">
       <!-- Tab1: 概览 -->
       <el-tab-pane label="概览" name="overview">
@@ -84,13 +102,11 @@
             构建或编辑关系
           </el-button>
         </div>
-        <ForceGraph
-          :nodes="graphStore.neighborNodes.nodes"
-          :links="graphStore.neighborNodes.links"
-          height="500px"
-          @node-click="selectNode"
-          @node-hover="handleNodeHover"
-          @link-click="handleLinkClick"
+        <el-alert
+          title="学科与知识点的关系图显示在页面上方；点击知识点可切换当前编辑对象。"
+          type="info"
+          :closable="false"
+          show-icon
         />
         <div v-if="selectedLink" class="graph-detail__link-info">
           <LinkInfo :link="selectedLink" />
@@ -342,12 +358,18 @@ async function selectNode(node: KnowledgeNode): Promise<void> {
   await graphStore.loadMisconceptions(node.id)
 }
 
+async function handleGraphNodeClick(node: KnowledgeNode): Promise<void> {
+  if (node.node_type === 'subject') return
+  await selectNode(node)
+}
+
 async function handleEditorChanged(): Promise<void> {
   if (!selectedNodeId.value) return
   const nodeId = selectedNodeId.value
   await Promise.all([
     graphStore.loadNodeDetail(nodeId),
     graphStore.loadNeighbors(nodeId, 1, 50),
+    graphStore.loadSubjectGraph(id.value),
     loadNodeResources(nodeId),
     loadRecommendations(nodeId),
     graphStore.loadNodeTasks(nodeId),
@@ -514,7 +536,10 @@ onMounted(async () => {
   if (!graphStore.squareStats.length) {
     await graphStore.loadSquareStats()
   }
-  await graphStore.searchNodes('', id.value)
+  await Promise.all([
+    graphStore.searchNodes('', id.value),
+    graphStore.loadSubjectGraph(id.value),
+  ])
   if (graphStore.searchResults.length > 0 && !selectedNodeId.value) {
     await selectNode(graphStore.searchResults[0])
   }
@@ -546,6 +571,33 @@ onMounted(async () => {
   &__selected-node {
     color: var(--color-text-secondary);
     font-size: 13px;
+  }
+
+  &__structure-card {
+    margin-bottom: var(--spacing-lg);
+
+    :deep(.el-card__body) {
+      padding: 20px;
+    }
+  }
+
+  &__structure-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+
+    h3 {
+      margin: 0 0 6px;
+      font-size: 18px;
+    }
+
+    p {
+      margin: 0;
+      color: var(--color-text-secondary);
+      font-size: 13px;
+    }
   }
 
   &__tab-actions {

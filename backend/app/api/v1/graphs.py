@@ -136,7 +136,19 @@ async def get_square(
     return APIResponse(data=stats)
 
 
-@router.get("/nodes/{node_id}", summary="获取节点详情")
+@router.get("/subjects/{subject_id}/graph", summary="获取学科知识图谱")
+async def get_subject_graph(
+    subject_id: str,
+    user: User = Depends(get_current_user),
+) -> APIResponse:
+    """Return the subject node together with all of its knowledge points."""
+    result = await graph_service.get_subject_graph(subject_id)
+    if not result["nodes"]:
+        raise HTTPException(status_code=404, detail="学科不存在")
+    return APIResponse(data=result)
+
+
+@router.get("/nodes/{node_id}", summary="获取知识点详情")
 async def get_node_detail(
     node_id: str,
     user: User = Depends(get_current_user),

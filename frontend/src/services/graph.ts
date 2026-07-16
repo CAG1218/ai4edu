@@ -19,6 +19,9 @@ export interface KnowledgeNode {
   id: string
   name: string
   subject?: string
+  subject_id?: string
+  node_type?: 'subject' | 'knowledge'
+  color?: string
   description?: string
   cognitive_level?: Record<string, number>
   has_misconception?: boolean
@@ -90,6 +93,9 @@ export interface CrossSubjectNode {
   id: string
   name: string
   subject: string
+  subject_id?: string
+  node_type?: 'subject' | 'knowledge'
+  color?: string
   description?: string | null
   has_misconception: boolean
   degree: number
@@ -278,6 +284,12 @@ export const graphApi = {
   /** 获取节点关联任务 */
   async getNodeTasks(nodeId: string): Promise<NodeTask[]> {
     const response = await api.get(`/graphs/nodes/${nodeId}/tasks`)
+    return response.data
+  },
+
+  /** 获取学科节点及其直接知识点组成的完整层级图 */
+  async getSubjectGraph(subjectId: string): Promise<NeighborData> {
+    const response = await api.get(`/graphs/subjects/${subjectId}/graph`)
     return response.data
   },
 

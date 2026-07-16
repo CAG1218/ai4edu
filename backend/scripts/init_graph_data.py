@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from neo4j import AsyncGraphDatabase
 
 from app.config import settings
+from app.services.graph_service import SUBJECT_CATEGORIES
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -169,6 +170,24 @@ async def initialize() -> dict[str, Any]:
                 )
             ).consume()
 
+            await (
+                await session.run(
+                    "CREATE CONSTRAINT subject_id IF NOT EXISTS "
+                    "FOR (s:Subject) REQUIRE s.id IS UNIQUE"
+                )
+            ).consume()
+
+            await (
+                await session.run(
+                    "UNWIND $subjects AS subject "
+                    "MERGE (s:Subject {id: 'subject_' + subject.id}) "
+                    "SET s.subject_id = subject.id, s.name = subject.name, "
+                    "s.icon = subject.icon, s.color = subject.color, "
+                    "s.node_type = 'subject', s.seed_source = 'ai4edu_base_v1'",
+                    {"subjects": SUBJECT_CATEGORIES},
+                )
+            ).consume()
+
             for subject, nodes in SUBJECT_NODES.items():
                 for index, (node_id, name, description) in enumerate(nodes):
                     await (
@@ -187,6 +206,15 @@ async def initialize() -> dict[str, Any]:
                             },
                         )
                     ).consume()
+                    await (
+                        await session.run(
+                            "MATCH (s:Subject {subject_id: $subject}), "
+                            "(n:KnowledgeNode {id: $id}) "
+                            "MERGE (s)-[r:HAS_KNOWLEDGE]->(n) "
+                            "SET r.seed_source = 'ai4edu_base_v1'",
+                            {"subject": subject, "id": node_id},
+                        )
+                    ).consume()
 
             allowed_types = {"PREREQUISITE", "APPLICATION", "RELATED"}
             for source, target, rel_type, label in relationships:
@@ -202,10 +230,12 @@ async def initialize() -> dict[str, Any]:
                 ).consume()
 
             result = await session.run(
-                "MATCH (n:KnowledgeNode) "
-                "WITH count(n) AS nodes "
+                "MATCH (n:KnowledgeNode) WITH count(n) AS nodes "
+                "MATCH (s:Subject) WITH nodes, count(s) AS subject_nodes "
                 "MATCH (:KnowledgeNode)-[r]->(:KnowledgeNode) "
-                "RETURN nodes, count(r) AS relationships"
+                "WITH nodes, subject_nodes, count(r) AS relationships "
+                "MATCH (:Subject)-[h:HAS_KNOWLEDGE]->(:KnowledgeNode) "
+                "RETURN nodes, subject_nodes, relationships, count(h) AS hierarchy_links"
             )
             summary = await result.single()
 
@@ -219,7 +249,9 @@ async def initialize() -> dict[str, Any]:
 
         return {
             "nodes": summary["nodes"] if summary else 0,
+            "subject_nodes": summary["subject_nodes"] if summary else 0,
             "relationships": summary["relationships"] if summary else 0,
+            "hierarchy_links": summary["hierarchy_links"] if summary else 0,
             "subjects": distribution,
         }
     finally:
@@ -229,8 +261,11 @@ async def initialize() -> dict[str, Any]:
 async def main() -> None:
     result = await initialize()
     logger.info(
-        "Knowledge graph initialized: %s nodes, %s relationships, subjects=%s",
+        "Knowledge graph initialized: %s subject nodes, %s knowledge nodes, "
+        "%s hierarchy links, %s knowledge relationships, subjects=%s",
+        result["subject_nodes"],
         result["nodes"],
+        result["hierarchy_links"],
         result["relationships"],
         result["subjects"],
     )

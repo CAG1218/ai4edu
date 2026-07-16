@@ -2,8 +2,16 @@
   <div ref="containerRef" class="force-graph" :style="{ width, height }">
     <svg ref="svgRef" :width="svgWidth" :height="svgHeight">
       <defs>
-        <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
-          <polygon points="0 0, 10 3.5, 0 7" fill="#999" />
+        <marker
+          id="arrowhead"
+          markerWidth="7"
+          markerHeight="5"
+          refX="7"
+          refY="2.5"
+          orient="auto"
+          markerUnits="userSpaceOnUse"
+        >
+          <polygon points="0 0, 7 2.5, 0 5" fill="#999" />
         </marker>
         <!-- 跨学科关系渐变色定义 -->
         <linearGradient
@@ -32,6 +40,18 @@
           class="link-line"
           @click.stop="onLinkClick(link)"
         />
+        <text
+          v-for="(link, idx) in renderedLinks.filter((item) => item.type === 'HAS_KNOWLEDGE')"
+          :key="`hierarchy-label-${idx}`"
+          :x="getLinkMidpoint(link, 'x')"
+          :y="getLinkMidpoint(link, 'y') - 5"
+          text-anchor="middle"
+          font-size="11"
+          fill="#606266"
+          class="link-label"
+        >
+          包含
+        </text>
       </g>
 
       <g class="nodes">
@@ -52,6 +72,17 @@
             :stroke-width="getNodeStrokeWidth(node)"
             class="node-circle"
           />
+          <text
+            v-if="node.node_type === 'subject'"
+            dy="4"
+            text-anchor="middle"
+            fill="#fff"
+            :font-size="(node.name || '').length > 4 ? 9 : 11"
+            font-weight="700"
+            class="node-type-label"
+          >
+            {{ node.name || node.subject_id || '学科' }}
+          </text>
           <!-- Misconception 小图标（跨学科模式） -->
           <text
             v-if="crossSubjectMode && node.has_misconception"
@@ -64,6 +95,7 @@
             ⚠
           </text>
           <text
+            v-if="node.node_type !== 'subject'"
             :dy="getNodeRadius(node) + 14"
             text-anchor="middle"
             fill="#333"
@@ -112,6 +144,9 @@ interface GraphNode {
   id: string
   name?: string
   subject?: string
+  subject_id?: string
+  node_type?: 'subject' | 'knowledge'
+  color?: string
   description?: string
   has_misconception?: boolean
   x?: number
@@ -219,6 +254,7 @@ function findNode(ref: string | GraphNode): GraphNode | undefined {
 }
 
 function getNodeRadius(node: GraphNode): number {
+  if (node.node_type === 'subject') return 34
   const linkCount = props.links.filter(
     (l) => (l.source === node.id || l.source === node) || (l.target === node.id || l.target === node)
   ).length
@@ -226,20 +262,27 @@ function getNodeRadius(node: GraphNode): number {
 }
 
 function getNodeColor(node: GraphNode): string {
-  return mergedColors.value[node.subject || ''] || '#5B8FF9'
+  if (node.color) return node.color
+  return mergedColors.value[node.subject || node.subject_id || ''] || '#5B8FF9'
 }
 
 function getNodeStroke(node: GraphNode): string {
+  if (node.node_type === 'subject') return getNodeColor(node)
   if (node.has_misconception) return '#E6A23C'
   return '#fff'
 }
 
 function getNodeStrokeWidth(node: GraphNode): number {
+  if (node.node_type === 'subject') return 5
   if (node.has_misconception) return 3
   return 2
 }
 
 function getLinkStroke(link: GraphLink, idx: number): string {
+  if (link.type === 'HAS_KNOWLEDGE') {
+    const sourceNode = findNode(link.source)
+    return sourceNode ? getNodeColor(sourceNode) : '#5B8FF9'
+  }
   if (props.crossSubjectMode && link.is_cross) {
     return `url(#cross-grad-${getCrossGradientIndex(link)})`
   }
@@ -261,6 +304,7 @@ function getCrossGradientIndex(link: GraphLink): number {
 }
 
 function getLinkWidth(link: GraphLink): number {
+  if (link.type === 'HAS_KNOWLEDGE') return 3
   if (link.strength !== undefined) {
     if (link.is_cross) return 1 + link.strength * 4
     return 1 + link.strength * 3
@@ -282,6 +326,10 @@ function getLinkX(link: GraphLink, end: 'source' | 'target', axis: 'x' | 'y'): n
   }
   const node = renderedNodes.value.find((n) => n.id === val)
   return node?.[axis] || 0
+}
+
+function getLinkMidpoint(link: GraphLink, axis: 'x' | 'y'): number {
+  return (getLinkX(link, 'source', axis) + getLinkX(link, 'target', axis)) / 2
 }
 
 function truncate(str: string, len: number): string {
@@ -316,17 +364,30 @@ function initLayout(): void {
     let initX: number, initY: number
 
     if (props.crossSubjectMode) {
-      // 按学科分组，每组占据一个扇区
+      // 每个学科中心节点占据一个分组中心，知识点环绕所属学科。
       const subjects = Object.keys(subjectGroups)
       const subjIdx = subjects.indexOf(n.subject || 'default')
       const subjCount = subjects.length
-      const groupSize = subjectGroups[n.subject || 'default']?.length || 1
-      const withinGroupIdx = subjectGroups[n.subject || 'default']?.indexOf(i) || 0
       const groupAngle = (2 * Math.PI * subjIdx) / subjCount
-      const withinAngle = (2 * Math.PI * withinGroupIdx) / groupSize
-      const r = Math.min(svgWidth.value, svgHeight.value) * 0.3
-      initX = cx + r * Math.cos(groupAngle + withinAngle * 0.3)
-      initY = cy + r * Math.sin(groupAngle + withinAngle * 0.3)
+      const groupRadius = Math.min(svgWidth.value, svgHeight.value) * 0.28
+      const groupX = cx + groupRadius * Math.cos(groupAngle)
+      const groupY = cy + groupRadius * Math.sin(groupAngle)
+
+      if (n.node_type === 'subject') {
+        initX = groupX
+        initY = groupY
+      } else {
+        const knowledgeIndexes = (subjectGroups[n.subject || 'default'] || [])
+          .filter((idx) => props.nodes[idx]?.node_type !== 'subject')
+        const withinGroupIdx = Math.max(0, knowledgeIndexes.indexOf(i))
+        const withinAngle = (2 * Math.PI * withinGroupIdx) / Math.max(knowledgeIndexes.length, 1)
+        const localRadius = 90
+        initX = groupX + localRadius * Math.cos(withinAngle)
+        initY = groupY + localRadius * Math.sin(withinAngle)
+      }
+    } else if (n.node_type === 'subject') {
+      initX = cx
+      initY = cy
     } else {
       const angle = (2 * Math.PI * i) / props.nodes.length
       const r = Math.min(svgWidth.value, svgHeight.value) * 0.3
@@ -437,8 +498,9 @@ function runSimulation(nodes: GraphNode[], links: GraphLink[]): void {
     // 向心力
     for (const node of nodes) {
       if (isDragging(node)) continue
-      node.x = (node.x || 0) + (cx - (node.x || 0)) * 0.01 * currentAlpha
-      node.y = (node.y || 0) + (cy - (node.y || 0)) * 0.01 * currentAlpha
+      const centerStrength = node.node_type === 'subject' && !props.crossSubjectMode ? 0.2 : 0.01
+      node.x = (node.x || 0) + (cx - (node.x || 0)) * centerStrength * currentAlpha
+      node.y = (node.y || 0) + (cy - (node.y || 0)) * centerStrength * currentAlpha
     }
   }
 
@@ -576,6 +638,12 @@ onUnmounted(() => {
   }
 
   .node-label {
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .node-type-label,
+  .link-label {
     pointer-events: none;
     user-select: none;
   }

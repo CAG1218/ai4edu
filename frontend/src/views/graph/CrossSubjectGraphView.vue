@@ -160,7 +160,7 @@
  * AI4EDU 跨学科关联图谱视图
  * 支持学科选择、强度筛选、力导向图可视化、统计面板、图例
  */
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowLeft, Connection } from '@element-plus/icons-vue'
 import { useGraphStore } from '@/stores/graph'
@@ -244,6 +244,13 @@ async function buildGraph(): Promise<void> {
 }
 
 function onNodeClick(node: CrossSubjectNode): void {
+  if (node.node_type === 'subject') {
+    router.push({
+      name: 'GraphDetail',
+      params: { id: node.subject_id || node.subject },
+    })
+    return
+  }
   router.push({
     name: 'GraphDetail',
     params: { id: node.subject },
@@ -263,6 +270,10 @@ function onLinkClick(link: CrossSubjectLink): void {
   }
   linkDialogVisible.value = true
 }
+
+onMounted(() => {
+  void buildGraph()
+})
 </script>
 
 <style lang="scss" scoped>

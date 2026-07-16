@@ -2,6 +2,22 @@
   <el-card shadow="never" class="cross-subject-legend">
     <template #header><span>图例说明</span></template>
 
+    <div class="cross-subject-legend__section">
+      <div class="cross-subject-legend__section-title">节点类型</div>
+      <div class="cross-subject-legend__special-list">
+        <div class="cross-subject-legend__special-item">
+          <span class="cross-subject-legend__subject-node">学科</span>
+          <span class="cross-subject-legend__special-label">大节点：学科中心</span>
+        </div>
+        <div class="cross-subject-legend__special-item">
+          <span class="cross-subject-legend__knowledge-node" />
+          <span class="cross-subject-legend__special-label">小节点：知识点</span>
+        </div>
+      </div>
+    </div>
+
+    <el-divider />
+
     <!-- 颜色 = 学科 -->
     <div class="cross-subject-legend__section">
       <div class="cross-subject-legend__section-title">学科颜色</div>
@@ -175,6 +191,29 @@ defineProps<{
   &__special-icon {
     font-size: 16px;
     font-weight: 700;
+  }
+
+  &__subject-node {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #1976d2;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  &__knowledge-node {
+    width: 20px;
+    height: 20px;
+    margin: 0 8px;
+    border-radius: 50%;
+    background: #1976d2;
+    flex-shrink: 0;
   }
 
   &__special-label {
