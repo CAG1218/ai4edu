@@ -143,7 +143,7 @@ import { useAgentStore } from '@/stores/agent'
 const agentStore = useAgentStore()
 
 const inputMessage = ref<string>('')
-const selectedAgentType = ref<string>('tutor')
+const selectedAgentType = ref<string>('general')
 const messageContainerRef = ref<HTMLElement | null>(null)
 
 /** 发送消息 */
@@ -152,7 +152,7 @@ async function handleSend(): Promise<void> {
   if (!content) return
 
   inputMessage.value = ''
-  await agentStore.streamMessage(content)
+  await agentStore.sendMessage(content)
   await scrollToBottom()
 }
 
@@ -220,9 +220,12 @@ watch(
   () => scrollToBottom()
 )
 
-onMounted(() => {
-  agentStore.fetchAgentTypes()
-  agentStore.fetchSessions()
+onMounted(async () => {
+  await agentStore.fetchAgentTypes()
+  if (!agentStore.agentTypes.some((item) => item.type === selectedAgentType.value)) {
+    selectedAgentType.value = agentStore.agentTypes[0]?.type ?? 'general'
+  }
+  await agentStore.fetchSessions(1, 20, selectedAgentType.value)
 })
 </script>
 

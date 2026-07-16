@@ -4,7 +4,6 @@
  */
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import api from '@/services/api'
 import { agentApi, type AgentSession, type AgentMessage, type AgentTypeInfo } from '@/services/agent'
 import { ElMessage } from 'element-plus'
 
@@ -127,8 +126,8 @@ export const useAgentStore = defineStore('agent', () => {
   async function fetchMessages(sessionId: string): Promise<void> {
     messagesLoading.value = true
     try {
-      const response = await api.get(`/agent/sessions/${sessionId}/messages`)
-      messages.value = response.data as AgentMessage[]
+      const response = await agentApi.getSession(sessionId)
+      messages.value = response.messages ?? []
     } catch (error) {
       console.error('获取消息列表失败:', error)
       messages.value = []
@@ -156,6 +155,7 @@ export const useAgentStore = defineStore('agent', () => {
       created_at: new Date().toISOString(),
     }
     messages.value.push(userMessage)
+    isStreaming.value = true
 
     try {
       const assistantMessage = await agentApi.sendMessage(currentSession.value.id, { content })
@@ -163,6 +163,8 @@ export const useAgentStore = defineStore('agent', () => {
     } catch (error) {
       console.error('发送消息失败:', error)
       ElMessage.error('发送消息失败')
+    } finally {
+      isStreaming.value = false
     }
   }
 

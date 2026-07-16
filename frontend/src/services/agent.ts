@@ -24,6 +24,10 @@ export interface AgentMessage {
   metadata?: Record<string, unknown>
 }
 
+interface AgentSessionDetail extends AgentSession {
+  messages: AgentMessage[]
+}
+
 export interface AgentTypeInfo {
   type: string
   name: string
@@ -58,37 +62,51 @@ export const agentApi = {
     page_size?: number
     agent_type?: string
   }): Promise<PaginatedSessions> {
-    const response = await api.get('/agent/sessions', { params })
-    return response.data as PaginatedSessions
+    const response = await api.get('/agents/sessions', { params })
+    const data = response.data as PaginatedSessions & { items: Array<AgentSession & { last_message_at?: string }> }
+    return {
+      ...data,
+      items: data.items.map((session) => ({
+        ...session,
+        updated_at: session.updated_at ?? session.last_message_at ?? session.created_at,
+      })),
+    }
   },
 
   /** 创建新会话 */
   async createSession(params: CreateSessionParams): Promise<AgentSession> {
-    const response = await api.post('/agent/sessions', params)
-    return response.data as AgentSession
+    const response = await api.post('/agents/sessions', params)
+    const session = response.data as AgentSession
+    return { ...session, message_count: session.message_count ?? 0, updated_at: session.updated_at ?? session.created_at }
   },
 
   /** 获取会话详情 */
-  async getSession(sessionId: string): Promise<AgentSession> {
-    const response = await api.get(`/agent/sessions/${sessionId}`)
-    return response.data as AgentSession
+  async getSession(sessionId: string): Promise<AgentSessionDetail> {
+    const response = await api.get(`/agents/sessions/${sessionId}`)
+    return response.data as AgentSessionDetail
   },
 
   /** 发送消息 */
   async sendMessage(sessionId: string, params: SendMessageParams): Promise<AgentMessage> {
-    const response = await api.post(`/agent/sessions/${sessionId}/messages`, params)
-    return response.data as AgentMessage
+    const response = await api.post(`/agents/sessions/${sessionId}/messages`, params, { timeout: 120000 })
+    const data = response.data as { assistant_message: AgentMessage }
+    return { ...data.assistant_message, session_id: sessionId, created_at: new Date().toISOString() }
   },
 
   /** 删除会话 */
   async deleteSession(sessionId: string): Promise<void> {
-    await api.delete(`/agent/sessions/${sessionId}`)
+    await api.delete(`/agents/sessions/${sessionId}`)
   },
 
   /** 获取Agent类型列表 */
   async listAgentTypes(): Promise<AgentTypeInfo[]> {
-    const response = await api.get('/agent/types')
-    return response.data as AgentTypeInfo[]
+    const response = await api.get('/agents/types')
+    return (response.data as Array<Record<string, unknown>>).map((item) => ({
+      type: String(item.agent_type),
+      name: String(item.name),
+      description: String(item.description),
+      capabilities: (item.supported_features as string[]) ?? [],
+    }))
   },
 
   /** 获取WebSocket连接URL */
