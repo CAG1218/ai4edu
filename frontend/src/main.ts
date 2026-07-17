@@ -54,7 +54,9 @@ initTelemetry()
 app.mount('#app')
 
 // ============ PWA Service Worker 注册 ============
-if ('serviceWorker' in navigator) {
+// Only enable offline caching in production. Caching Vite's development modules
+// can mix dependency versions after switching branches or reinstalling packages.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', async () => {
     try {
       const registration = await navigator.serviceWorker.register('/sw.js', {
@@ -101,6 +103,25 @@ if ('serviceWorker' in navigator) {
       })
     } catch (error) {
       console.error('[PWA] Service Worker registration failed:', error)
+    }
+  })
+}
+
+// Older revisions registered the production worker during local development.
+// Remove those registrations and project caches once so the current modules load.
+if (import.meta.env.DEV && 'serviceWorker' in navigator) {
+  window.addEventListener('load', async () => {
+    const registrations = await navigator.serviceWorker.getRegistrations()
+    await Promise.all(registrations.map((registration) => registration.unregister()))
+
+    if ('caches' in window) {
+      const cacheNames = await caches.keys()
+      const projectCacheNames = cacheNames.filter((name) =>
+        /^(api-cache|static-assets|images-cache|navigation-cache|cdn-cache|workbox-precache)/.test(
+          name
+        )
+      )
+      await Promise.all(projectCacheNames.map((name) => caches.delete(name)))
     }
   })
 }

@@ -6,6 +6,12 @@
 // Workbox 7.x CDN 引入
 importScripts('https://storage.googleapis.com/workbox-cdn/releases/7.0.0/workbox-sw.js')
 
+// This legacy worker may still be installed by an older development bundle.
+// Retire it on Vite's local port so it cannot serve stale transformed modules.
+const isLocalDevelopment =
+  (self.location.hostname === 'localhost' || self.location.hostname === '127.0.0.1') &&
+  self.location.port === '5173'
+
 const { precaching, routing, strategies, backgroundSync, pushManager } = workbox
 const { precacheAndRoute, cleanupOutdatedCaches } = precaching
 const { registerRoute } = routing
@@ -14,7 +20,17 @@ const { Queue } = backgroundSync
 
 // 跳过等待，立即激活
 self.skipWaiting()
-self.addEventListener('activate', () => {
+self.addEventListener('activate', (event) => {
+  if (isLocalDevelopment) {
+    event.waitUntil(
+      caches
+        .keys()
+        .then((names) => Promise.all(names.map((name) => caches.delete(name))))
+        .then(() => self.registration.unregister())
+        .then(() => self.clients.claim())
+    )
+    return
+  }
   self.clients.claim()
 })
 
@@ -50,9 +66,10 @@ registerRoute(
 // 静态资源（CSS/JS/字体/图片）：CacheFirst
 registerRoute(
   ({ request }) =>
-    request.destination === 'style' ||
-    request.destination === 'script' ||
-    request.destination === 'font',
+    !isLocalDevelopment &&
+    (request.destination === 'style' ||
+      request.destination === 'script' ||
+      request.destination === 'font'),
   new CacheFirst({
     cacheName: 'static-assets',
     plugins: [
