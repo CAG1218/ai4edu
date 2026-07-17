@@ -19,6 +19,7 @@ from app.models.flash_card import FlashCard
 from app.models.note import Note
 from app.models.resource import Resource, ResourceFavorite
 from app.models.user import User
+from app.core.exceptions import PermissionDeniedException, ValidationException
 from app.schemas.growth import (
     DashboardStatCard,
     EvaluationCreate,
@@ -46,8 +47,51 @@ class GrowthService:
         teacher_id: int,
         tenant_id: int,
         data: EvaluationCreate,
+        allow_tenant_courses: bool = False,
     ) -> EvaluationResponse:
         """创建学生评价"""
+        student = (
+            await self.db.execute(
+                select(User).where(
+                    User.id == data.student_id,
+                    User.tenant_id == tenant_id,
+                    User.is_active.is_(True),
+                    User.deleted_at.is_(None),
+                )
+            )
+        ).scalars().first()
+        if not student:
+            raise ValidationException(message="学生不存在或当前不可评价")
+
+        if data.course_id is not None:
+            course_conditions = [
+                Course.id == data.course_id,
+                Course.tenant_id == tenant_id,
+                Course.is_active.is_(True),
+            ]
+            if not allow_tenant_courses:
+                course_conditions.append(Course.teacher_id == teacher_id)
+            course = (
+                await self.db.execute(
+                    select(Course).where(and_(*course_conditions))
+                )
+            ).scalars().first()
+            if not course:
+                raise PermissionDeniedException(message="只能评价本人任教课程中的学生")
+
+            enrollment = (
+                await self.db.execute(
+                    select(CourseEnrollment.id).where(
+                        CourseEnrollment.course_id == data.course_id,
+                        CourseEnrollment.user_id == data.student_id,
+                        CourseEnrollment.role == "student",
+                        CourseEnrollment.dropped_at.is_(None),
+                    )
+                )
+            ).scalar_one_or_none()
+            if enrollment is None:
+                raise ValidationException(message="该学生未选修所选课程")
+
         evaluation = StudentEvaluation(
             tenant_id=tenant_id,
             student_id=data.student_id,
@@ -103,9 +147,15 @@ class GrowthService:
         course_id: Optional[int] = None,
         page: int = 1,
         page_size: int = 20,
+        tenant_id: Optional[int] = None,
+        visible_only: bool = False,
     ) -> Tuple[List[EvaluationResponse], int]:
         """获取学生评价列表"""
         conditions = [StudentEvaluation.student_id == student_id]
+        if tenant_id is not None:
+            conditions.append(StudentEvaluation.tenant_id == tenant_id)
+        if visible_only:
+            conditions.append(StudentEvaluation.is_visible.is_(True))
         if course_id is not None:
             conditions.append(StudentEvaluation.course_id == course_id)
 

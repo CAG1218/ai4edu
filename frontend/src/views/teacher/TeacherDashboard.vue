@@ -52,6 +52,8 @@
             <div><span>已识别薄弱知识点</span><strong class="warn">{{ analytics.weak_points.length }}</strong></div>
           </div>
         </el-card>
+
+        <TeacherEvaluationPanel :courses="courses" />
       </el-col>
     </el-row>
   </div>
@@ -63,6 +65,7 @@ import { useRouter } from 'vue-router'
 import { Document, DataAnalysis, ChatDotRound, Folder, Reading } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/services/api'
+import TeacherEvaluationPanel from './components/TeacherEvaluationPanel.vue'
 
 interface Course { id: number; name: string; grade: string; semester: string }
 interface Dashboard { student_count: number; course_count: number; lesson_plan_count: number; resource_count: number }

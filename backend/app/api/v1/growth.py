@@ -38,6 +38,7 @@ async def create_evaluation(
         teacher_id=current_user.id,
         tenant_id=current_user.tenant_id or 0,
         data=data,
+        allow_tenant_courses=current_user.role in {"admin", "super_admin"},
     )
     return APIResponse(data=result, message="success")
 
@@ -48,16 +49,24 @@ async def list_evaluations(
     course_id: Optional[int] = Query(None, description="课程ID筛选"),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
-    current_user: User = Depends(require_role(["teacher", "admin", "super_admin"])),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> APIResponse[PaginatedResponse[EvaluationResponse]]:
     """教师/管理员获取学生评价列表"""
+    if current_user.role == "student" and student_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只能查看自己的教师评价",
+        )
+
     service = GrowthService(db)
     items, total = await service.list_evaluations(
         student_id=student_id,
         course_id=course_id,
         page=page,
         page_size=page_size,
+        tenant_id=current_user.tenant_id,
+        visible_only=current_user.role == "student",
     )
     return APIResponse(
         data=PaginatedResponse(

@@ -523,14 +523,28 @@ class TeacherService:
         Returns:
             学生列表
         """
-        # 简化实现：查询该租户下的学生
         conditions = [
+            Course.tenant_id == tenant_id,
+            Course.teacher_id == teacher_id,
+            Course.is_active.is_(True),
+            CourseEnrollment.dropped_at.is_(None),
+            CourseEnrollment.role == "student",
             User.tenant_id == tenant_id,
-            User.role == "student",
-            User.is_active == True,
+            User.is_active.is_(True),
+            User.deleted_at.is_(None),
         ]
+        if course_id is not None:
+            conditions.append(Course.id == course_id)
 
-        stmt = select(User).where(and_(*conditions)).limit(50)
+        stmt = (
+            select(User)
+            .join(CourseEnrollment, CourseEnrollment.user_id == User.id)
+            .join(Course, Course.id == CourseEnrollment.course_id)
+            .where(and_(*conditions))
+            .distinct()
+            .order_by(User.nickname, User.id)
+            .limit(200)
+        )
         result = await self.db.execute(stmt)
         students = result.scalars().all()
 
